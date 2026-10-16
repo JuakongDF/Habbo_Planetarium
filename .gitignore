@@ -1,0 +1,8 @@
+__pycache__/
+.venv/
+.env
+.env.*
+controller/config.json
+controller/.astra-*.lock
+controller/data/
+.DS_Store

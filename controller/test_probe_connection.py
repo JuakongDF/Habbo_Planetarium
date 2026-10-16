@@ -1,0 +1,47 @@
+import copy
+import json
+from pathlib import Path
+import unittest
+
+import probe_connection as probe
+from realtime import ApiError, ConfigurationError
+
+
+class ProbeTests(unittest.TestCase):
+    def config(self):
+        return probe.validate_connection(json.loads(
+            (Path(__file__).parent.parent / "connection.json").read_text()))
+
+    def test_bc_zero_id_discovery_is_read_only_and_controls_are_optional(self):
+        requests = []
+
+        class Client:
+            def request(self, method, path):
+                requests.append((method, path))
+                if path.endswith("/furni-bc/0"):
+                    return {"value": "9223372036854775807"}
+                raise ApiError("HTTP 404")
+
+        result = probe.probe(self.config(), Client())
+        self.assertTrue(result["unique_binding"])
+        self.assertFalse(result["ready_for_controller"])
+        self.assertTrue(result["candidates"][1]["found"])
+        self.assertEqual(len(requests), 4)
+        self.assertTrue(all(method == "GET" for method, _ in requests))
+        self.assertNotIn("9223372036854775807", json.dumps(result))
+
+    def test_two_matches_are_ambiguous(self):
+        class Client:
+            def request(self, method, path):
+                return {"value": 0}
+        self.assertFalse(probe.probe(self.config(), Client())["unique_binding"])
+
+    def test_bad_candidate_is_rejected(self):
+        config = copy.deepcopy(self.config())
+        config["candidates"][0]["entity_id"] = 0
+        with self.assertRaises(ConfigurationError):
+            probe.validate_connection(config)
+
+
+if __name__ == "__main__":
+    unittest.main()

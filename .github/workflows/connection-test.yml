@@ -1,0 +1,28 @@
+name: Habbo connection test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: habbo-room-126070270
+  cancel-in-progress: false
+
+jobs:
+  read-only-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the trusted main branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Run controller and connection tests
+        run: python3 -m unittest discover -s controller -p 'test_*.py' -v
+      - name: Read the test binding and controller globals
+        env:
+          HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
+        run: python3 controller/probe_connection.py --config connection.json
