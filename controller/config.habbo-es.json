@@ -1,0 +1,36 @@
+{
+  "hotel_origin": "https://www.habbo.es",
+  "room_id": 126070270,
+  "state_variable": "test1",
+  "observer_variable": "astra_observer",
+  "enabled_variable": "astra_enabled",
+  "poll_seconds": 5,
+  "update_seconds": 10,
+  "default_observer": 1,
+  "observers": {
+    "1": {
+      "name": "Santiago (example)",
+      "latitude": -33.45,
+      "longitude": -70.67,
+      "elevation_m": 570
+    },
+    "2": {
+      "name": "Greenwich (example)",
+      "latitude": 51.4779,
+      "longitude": 0,
+      "elevation_m": 46
+    }
+  },
+  "projection": {
+    "room_size": 56,
+    "horizon_height": 1000,
+    "height_per_degree": 10
+  },
+  "bodies": [
+    {
+      "name": "sun",
+      "target_kind": "furni-bc",
+      "furni_id": 0
+    }
+  ]
+}

@@ -12,8 +12,9 @@ from realtime import ApiError, ConfigurationError
 
 class ProbeTests(unittest.TestCase):
     def config(self):
-        return probe.validate_connection(json.loads(
-            (Path(__file__).parent.parent / "connection.json").read_text()))
+        config = json.loads((Path(__file__).parent.parent / "connection.json").read_text())
+        config["candidates"].insert(0, {"target_kind": "furni", "entity_id": 2147418112})
+        return probe.validate_connection(config)
 
     def test_bc_zero_id_discovery_is_read_only_and_controls_are_optional(self):
         requests = []
@@ -53,7 +54,7 @@ class ProbeTests(unittest.TestCase):
         result = probe.public_api_check(client, "https://www.habbo.es")
         self.assertEqual(result, {"status": 463, "content_type": "text/html"})
         request = client.opener.open.call_args.args[0]
-        self.assertEqual(request.headers, {"Accept": "application/json"})
+        self.assertEqual(request.headers, {"Accept": "application/json", "User-agent": probe.USER_AGENT})
 
 
 if __name__ == "__main__":

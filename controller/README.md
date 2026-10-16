@@ -50,7 +50,7 @@ Configure these room variables and allow the required API access:
 | Global `astra_observer` | 1 | User-controlled site ID from the configured presets |
 | Permanent furni `astra_state` | 0 | Assign to the Sun marker; updated by batch PATCH |
 
-The process does not create definitions or bindings. PATCH intentionally fails if `astra_state` is absent, so first assign it through WIRED. This version supports ordinary floor furni IDs only, not BC offsets or wall items.
+The process does not create definitions or bindings. PATCH intentionally fails if the state variable is absent, so first assign it through WIRED. Each body supports `target_kind: "furni"` or `"furni-bc"`. For BC items supply the already converted API ID, including zero; do not supply the offset in-game ID. Wall items are not supported by this movement prototype.
 
 The API reads the globals; it never overwrites the visitor's controls. The WIRED consumer must also check those controls locally to stop immediately when disabled and reject old-location packets. The two global reads are not an atomic snapshot; the packet's observer ID lets the consumer reject a selection that changed in flight. Once a future occupancy detector is verified, it can control the enable switch. Empty-room detection is not implemented by this prototype.
 

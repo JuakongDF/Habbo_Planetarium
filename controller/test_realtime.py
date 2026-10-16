@@ -94,23 +94,34 @@ class TransportTests(unittest.TestCase):
         self.assertTrue(all(q.method == "GET" for q in opener.requests))
 
     def test_batch_payload_and_headers(self):
-        client, opener = self.client({"results": [{"op_id": "101", "status": 200}]})
+        client, opener = self.client({"results": [{"op_id": "furni/101", "status": 200}]})
         word = r.pack_state(55, 1900, 1, 2, 1792065600)
         self.assertEqual(client.publish([{"furni_id": 101, "value": str(word)}]), 1)
         request = opener.requests[0]
         self.assertTrue(request.full_url.endswith("/furni/astra_state/batch"))
         self.assertEqual(request.headers["X-wired-write-key"], "write-secret")
         self.assertEqual(request.headers["X-wired-read-key"], "read-secret")
+        self.assertEqual(request.headers["User-agent"], r.USER_AGENT)
         self.assertEqual(json.loads(request.data)["requests"][0],
-                         dict(op_id="101", method="PATCH", path="furni/101", body={"value": str(word)}))
+                         dict(op_id="furni/101", method="PATCH", path="furni/101", body={"value": str(word)}))
+
+    def test_bc_zero_id_routes_without_reapplying_offset(self):
+        c = config()
+        c["bodies"][0].update(target_kind="furni-bc", furni_id=0)
+        r.validate_config(c, live=True)
+        opener = FakeOpener({"results": [{"op_id": "furni-bc/0", "status": 200}]})
+        client = r.HabboClient(c, "read-secret", "write-secret", opener=opener)
+        client.publish([{"target_kind": "furni-bc", "furni_id": 0, "value": "0"}])
+        operation = json.loads(opener.requests[0].data)["requests"][0]
+        self.assertEqual(operation["path"], "furni-bc/0")
 
     def test_partial_failures_and_missing_results_are_not_success(self):
         rows = [{"furni_id": 101, "value": "1"}, {"furni_id": 102, "value": "2"}]
         for result, exception in [
-            ({"results": [{"op_id": "101", "status": 200}, {"op_id": "102", "status": 429}]}, r.RetryLater),
-            ({"results": [{"op_id": "101", "status": 200}, {"op_id": "102", "status": 404}]}, r.ApiError),
-            ({"results": [{"op_id": "101", "status": 200}]}, r.ApiError),
-            ({"results": [{"op_id": "101", "status": 200}]*2}, r.ApiError),
+            ({"results": [{"op_id": "furni/101", "status": 200}, {"op_id": "furni/102", "status": 429}]}, r.RetryLater),
+            ({"results": [{"op_id": "furni/101", "status": 200}, {"op_id": "furni/102", "status": 404}]}, r.ApiError),
+            ({"results": [{"op_id": "furni/101", "status": 200}]}, r.ApiError),
+            ({"results": [{"op_id": "furni/101", "status": 200}]*2}, r.ApiError),
         ]:
             client, _ = self.client(result)
             with self.assertRaises(exception):

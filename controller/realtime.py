@@ -17,6 +17,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+USER_AGENT = "HabboPlanetarium/0.1 (+https://github.com/JuakongDF/Habbo_Planetarium)"
+
 
 class ConfigurationError(ValueError):
     pass
@@ -92,8 +94,12 @@ def validate_config(c, live=False):
         if body["name"] not in ("sun", "moon", "mercury", "venus", "mars barycenter",
                                  "jupiter barycenter", "saturn barycenter"):
             raise ConfigurationError("Unsupported ephemeris target")
-        body["furni_id"] = integer(body["furni_id"], 1 if live else 0, 2**63-1, "furni_id")
-        targets.append(body["furni_id"])
+        kind = body.setdefault("target_kind", "furni")
+        if kind not in ("furni", "furni-bc"):
+            raise ConfigurationError("Unsupported furniture target kind")
+        minimum = 1 if live and kind == "furni" else 0
+        body["furni_id"] = integer(body["furni_id"], minimum, 2**63-1, "furni_id")
+        targets.append((kind, body["furni_id"]))
     if len(targets) != len(set(targets)):
         raise ConfigurationError("Each body must have a different furni_id")
     return c
@@ -153,7 +159,7 @@ class Ephemeris:
             position = project(float(alt.degrees), float(az.degrees), self.config["projection"])
             word = pack_state(position["index"], position["height"], position["visible"],
                               observer_id, int(timestamp))
-            rows.append(dict(body=body["name"], furni_id=body["furni_id"],
+            rows.append(dict(body=body["name"], furni_id=body["furni_id"], target_kind=body["target_kind"],
                              altitude_degrees=float(alt.degrees), azimuth_degrees=float(az.degrees),
                              **position, value=str(word)))
         return rows
@@ -222,7 +228,7 @@ class HabboClient:
 
     def request(self, method, path, payload=None, costs=None):
         self.budget.acquire(costs or {"read": 1})
-        headers = {"X-Wired-Read-Key": self.read_key, "Accept": "application/json"}
+        headers = {"X-Wired-Read-Key": self.read_key, "Accept": "application/json", "User-Agent": USER_AGENT}
         if method != "GET":
             if not self.write_key:
                 raise ConfigurationError("Set HABBO_WRITE_KEY locally before a live test")
@@ -269,7 +275,8 @@ class HabboClient:
     def preflight(self):
         enabled, observer = self.controls()
         for body in self.config["bodies"]:
-            path = "/furni/" + quote(self.config["state_variable"], safe="") + f'/furni/{body["furni_id"]}'
+            kind = body.get("target_kind", "furni")
+            path = "/furni/" + quote(self.config["state_variable"], safe="") + f'/{kind}/{body["furni_id"]}'
             result = self.request("GET", path)
             if not isinstance(result, dict) or "value" not in result:
                 raise ApiError("Malformed furni variable response")
@@ -277,8 +284,8 @@ class HabboClient:
         return dict(enabled=enabled, observer=observer, bindings=len(self.config["bodies"]))
 
     def publish(self, rows):
-        requests = [dict(op_id=str(row["furni_id"]), method="PATCH",
-                         path=f'furni/{row["furni_id"]}', body={"value": row["value"]})
+        requests = [dict(op_id=f'{row.get("target_kind", "furni")}/{row["furni_id"]}', method="PATCH",
+                         path=f'{row.get("target_kind", "furni")}/{row["furni_id"]}', body={"value": row["value"]})
                     for row in rows]
         n = len(requests)
         if not 1 <= n <= 10 or len({r["op_id"] for r in requests}) != n:

@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request
 
-from realtime import ApiError, ConfigurationError, HabboClient, integer, log
+from realtime import ApiError, ConfigurationError, HabboClient, USER_AGENT, integer, log
 
 
 def validate_connection(config):
@@ -50,7 +50,7 @@ def read_value(client, path):
 
 def public_api_check(client, origin, path="/api/public/achievements"):
     """Compare a public endpoint without sending any room credentials."""
-    request = Request(origin + path, headers={"Accept": "application/json"})
+    request = Request(origin + path, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
     try:
         with client.opener.open(request, timeout=10) as response:
             return {"status": response.status, "content_type": response.headers.get_content_type()}

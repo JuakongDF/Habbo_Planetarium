@@ -4,7 +4,6 @@
   "variable": "test1",
   "supplied_in_game_or_api_id": 2147418112,
   "candidates": [
-    {"target_kind": "furni", "entity_id": 2147418112},
     {"target_kind": "furni-bc", "entity_id": 0}
   ],
   "controls": ["astra_enabled", "astra_observer"]
