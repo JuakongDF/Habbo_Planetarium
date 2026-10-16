@@ -16,6 +16,14 @@ The HTTP client identifies itself as `HabboPlanetarium/0.1` with this repository
 
 Store API keys only under **Settings → Secrets and variables → Actions** as `HABBO_READ_KEY` and `HABBO_WRITE_KEY`. The write key is not passed to this connection-test workflow. No keys belong in source, configuration files, screenshots or chat.
 
+## Manual Sun test
+
+**Actions → Real-time Sun test → Run workflow** defaults to `preview`. It validates the actual control values, loads the JPL DE440s ephemeris, and calculates the current Sun position for the observer selected in the room. Preview performs only room reads and does not receive the write key. Observer 1 is the Santiago example; observer 2 is Greenwich. Select the intended site before a live demonstration.
+
+After the WIRED decoder is configured and its movement range is calibrated, use `live` with the initial 60-second duration. This mode writes the packed current-state value to `test1` on BC item 0 every ten seconds while `astra_enabled` is 1. With `astra_enabled` set to 0, the loop only polls. Both manual workflows share one concurrency group. Neither creates a recurring schedule.
+
+Changing `test1` does not move a furni by itself. The room must have the decoder and movement logic described in [controller/README.md](controller/README.md#decode-the-current-state-packet-in-wired). Keep `astra_enabled` at 0 until that consumer is ready. Stopping the workflow does not reset the enable switch or clear the last value; the consumer must enforce its timestamp expiry.
+
 Run local checks with:
 
 ```sh

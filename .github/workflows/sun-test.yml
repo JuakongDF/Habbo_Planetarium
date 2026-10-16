@@ -1,0 +1,83 @@
+name: Real-time Sun test
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Preview calculates only; live writes test1 while astra_enabled is 1
+        type: choice
+        options: [preview, live]
+        default: preview
+      duration_seconds:
+        description: Duration of the live test (preview ignores this)
+        type: choice
+        options: ['60', '300', '600']
+        default: '60'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: habbo-room-126070270
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  sun-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the trusted main branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Run controller tests
+        run: python3 -m unittest discover -s controller -p 'test_*.py' -v
+      - name: Verify the room controls and binding without writing
+        env:
+          HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
+        run: |
+          python3 controller/realtime.py --config controller/config.habbo-es.json --probe \
+            | tee "$RUNNER_TEMP/astra-preflight.json"
+      - name: Use the room-selected observer for the preview
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          directory = Path(os.environ['RUNNER_TEMP'])
+          status = json.loads((directory / 'astra-preflight.json').read_text())
+          config = json.loads(Path('controller/config.habbo-es.json').read_text())
+          config['default_observer'] = status['observer']
+          (directory / 'astra-config.json').write_text(json.dumps(config))
+          print('Observer:', config['observers'][str(status['observer'])]['name'])
+          PY
+      - name: Install astronomy dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/astra-venv"
+          "$RUNNER_TEMP/astra-venv/bin/python" -m pip install -r controller/requirements.txt
+      - name: Download the reference ephemeris
+        run: |
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+            --proto '=https' --tlsv1.2 \
+            https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440s.bsp \
+            -o "$RUNNER_TEMP/de440s.bsp"
+      - name: Preview the current Sun position without writing
+        run: |
+          "$RUNNER_TEMP/astra-venv/bin/python" controller/realtime.py \
+            --config "$RUNNER_TEMP/astra-config.json" \
+            --ephemeris "$RUNNER_TEMP/de440s.bsp"
+      - name: Run the bounded live test
+        if: ${{ inputs.mode == 'live' }}
+        env:
+          HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
+          HABBO_WRITE_KEY: ${{ secrets.HABBO_WRITE_KEY }}
+          TEST_DURATION: ${{ inputs.duration_seconds }}
+        run: |
+          "$RUNNER_TEMP/astra-venv/bin/python" controller/realtime.py \
+            --config "$RUNNER_TEMP/astra-config.json" \
+            --ephemeris "$RUNNER_TEMP/de440s.bsp" \
+            --live --duration "$TEST_DURATION"
