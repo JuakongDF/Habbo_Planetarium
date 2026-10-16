@@ -171,7 +171,7 @@ class Budget:
     Batched writes charge both each constituent and one request to the write
     bucket until the hotel establishes its exact accounting.
     """
-    LIMITS = {"read": ((60, 240), (10, 48)), "write": ((60, 96), (10, 24)),
+    LIMITS = {"read": ((60, 240), (10, 48)), "profile_read": ((60, 96), (10, 16)), "write": ((60, 96), (10, 24)),
               "batch": ((60, 24),), "batch_write": ((60, 400),)}
 
     def __init__(self, clock=time.monotonic):
@@ -226,7 +226,9 @@ class HabboClient:
         self.budget = budget or Budget()
         self.base = f'{config["hotel_origin"]}/api/public/rooms/{config["room_id"]}/variables'
 
-    def request(self, method, path, payload=None, costs=None):
+    def request(self, method, path, payload=None, costs=None, resource="variables"):
+        if resource not in ("variables", "variables_profile"):
+            raise ConfigurationError("Unsupported API resource")
         self.budget.acquire(costs or {"read": 1})
         headers = {"X-Wired-Read-Key": self.read_key, "Accept": "application/json", "User-Agent": USER_AGENT}
         if method != "GET":
@@ -234,7 +236,8 @@ class HabboClient:
                 raise ConfigurationError("Set HABBO_WRITE_KEY locally before a live test")
             headers.update({"X-Wired-Write-Key": self.write_key, "Content-Type": "application/json"})
         data = None if payload is None else json.dumps(payload).encode("utf-8")
-        request = Request(self.base + path, data=data, headers=headers, method=method)
+        base = self.base if resource == "variables" else self.base.removesuffix("/variables") + "/variables_profile"
+        request = Request(base + path, data=data, headers=headers, method=method)
         try:
             with self.opener.open(request, timeout=10) as response:
                 return json.load(response)
@@ -248,7 +251,8 @@ class HabboClient:
                     error = error.get("code")
                 if error in ("wired.variables.key_missing", "wired.variables.key_invalid",
                              "wired.variables.api_disabled", "wired.variables.room_not_found",
-                             "wired.variables.variable_not_found", "wired.variables.invalid_target"):
+                             "wired.variables.variable_not_found", "wired.variables.invalid_target",
+                             "room.not_found", "wired.variables.not_found", "wired.variables.entity_not_found"):
                     detail = f"; {error}"
             except (ValueError, AttributeError, TypeError):
                 pass

@@ -56,6 +56,21 @@ class ProbeTests(unittest.TestCase):
         request = client.opener.open.call_args.args[0]
         self.assertEqual(request.headers, {"Accept": "application/json", "User-agent": probe.USER_AGENT})
 
+    def test_setup_distinguishes_definition_scope_and_empty_profile(self):
+        requests = []
+        class Client:
+            def request(self, method, path, **kwargs):
+                requests.append((method, path, kwargs))
+                if path == "":
+                    return {"users": [], "furni": [], "global": ["test1", "private_name"]}
+                return {"variables": {}}
+        result = probe.diagnose_setup(self.config(), Client())
+        self.assertEqual(result["definitions"]["scopes"]["global"]["matching_names"], ["test1"])
+        self.assertTrue(all(p["exists"] for p in result["profiles"]))
+        self.assertNotIn("private_name", json.dumps(result))
+        self.assertTrue(all(method == "GET" for method, _, _ in requests))
+        self.assertEqual(requests[1][2]["resource"], "variables_profile")
+
 
 if __name__ == "__main__":
     unittest.main()

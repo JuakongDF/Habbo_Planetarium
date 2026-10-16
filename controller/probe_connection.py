@@ -1,6 +1,6 @@
 """Read-only binding discovery. No writes and no astronomy dependencies.
 
-The given ID equals the BC offset; query both explicit candidate bindings.
+The confirmed BC in-game ID converts to API binding furni-bc/0.
 """
 import argparse
 import json
@@ -73,6 +73,40 @@ def probe(config, client):
                 ready_for_controller=len(matches) == 1 and all(v["found"] for v in controls.values()))
 
 
+def diagnose_setup(config, client):
+    """Report relevant names and existence only, never unrelated room values."""
+    result = {}
+    wanted = config["variable"]
+    try:
+        definitions = client.request("GET", "")
+        if not isinstance(definitions, dict):
+            raise ApiError("Malformed definitions response")
+        scopes = {}
+        for scope in ("users", "furni", "global"):
+            names = definitions.get(scope)
+            if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
+                raise ApiError("Malformed definitions response")
+            scopes[scope] = {"count": len(names), "matching_names":
+                [name for name in names if name.casefold() == wanted.casefold()]}
+        result["definitions"] = {"accessible": True, "scopes": scopes}
+    except ApiError as exc:
+        result["definitions"] = {"accessible": False, "error": str(exc)}
+    profiles = []
+    for candidate in config["candidates"]:
+        try:
+            path = "/furni/" + candidate["target_kind"] + "/" + str(candidate["entity_id"])
+            profile = client.request("GET", path, resource="variables_profile", costs={"profile_read": 1})
+            variables = profile.get("variables") if isinstance(profile, dict) else None
+            if not isinstance(variables, dict):
+                raise ApiError("Malformed furniture profile response")
+            profiles.append({**candidate, "exists": True, "variable_count": len(variables),
+                "matching_names": [name for name in variables if name.casefold() == wanted.casefold()]})
+        except ApiError as exc:
+            profiles.append({**candidate, "exists": False, "error": str(exc)})
+    result["profiles"] = profiles
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path(__file__).parent.parent / "connection.json")
@@ -88,6 +122,8 @@ def main():
         log("wired_route_without_key", **public_api_check(client, config["hotel_origin"], unauthenticated_path))
         result = probe(config, client)
         log("connection_probe", **result)
+        if not result["unique_binding"]:
+            log("setup_diagnosis", **diagnose_setup(config, client))
         return 0 if result["unique_binding"] else 1
     except (ApiError, ConfigurationError, OSError, ValueError, TypeError, KeyError) as exc:
         log("probe_error", message=str(exc) if isinstance(exc, (ApiError, ConfigurationError))
