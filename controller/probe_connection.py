@@ -48,9 +48,9 @@ def read_value(client, path):
         return {"found": False, "error": str(exc)}
 
 
-def public_api_check(client, origin):
+def public_api_check(client, origin, path="/api/public/achievements"):
     """Compare a public endpoint without sending any room credentials."""
-    request = Request(origin + "/api/public/achievements", headers={"Accept": "application/json"})
+    request = Request(origin + path, headers={"Accept": "application/json"})
     try:
         with client.opener.open(request, timeout=10) as response:
             return {"status": response.status, "content_type": response.headers.get_content_type()}
@@ -81,6 +81,11 @@ def main():
         config = validate_connection(json.loads(args.config.read_text()))
         client = HabboClient(config, os.environ.get("HABBO_READ_KEY"), None)
         log("public_api_check", **public_api_check(client, config["hotel_origin"]))
+        candidate = config["candidates"][0]
+        unauthenticated_path = (f'/api/public/rooms/{config["room_id"]}/variables/furni/' +
+                                quote(config["variable"], safe="") + "/" +
+                                candidate["target_kind"] + "/" + str(candidate["entity_id"]))
+        log("wired_route_without_key", **public_api_check(client, config["hotel_origin"], unauthenticated_path))
         result = probe(config, client)
         log("connection_probe", **result)
         return 0 if result["unique_binding"] else 1
