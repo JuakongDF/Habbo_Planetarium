@@ -2,7 +2,7 @@
 
 Real-time astronomical room prototype for [Habbo.es room 126070270](https://www.habbo.es/room/126070270).
 
-The first workflow is **Habbo connection test**, started manually from Actions. It uses only the existing `HABBO_READ_KEY` secret, makes four GET requests, and does not change any room variable or move furniture. It checks the supplied variable `test1` against two possible furniture bindings, plus the optional `astra_enabled` and `astra_observer` controls.
+The first workflow is **Habbo connection test**, started manually from Actions. It uses only the existing `HABBO_READ_KEY` secret and does not change any room variable or move furniture. It makes one public GET without credentials to check API reachability, then four authenticated GETs: the supplied variable `test1` against two possible furniture bindings, plus the optional `astra_enabled` and `astra_observer` controls.
 
 The supplied furniture ID `2147418112` equals the documented Builder's Club in-game offset (`0x7FFFFFFF - 0xFFFF`). If it is a BC in-game ID, its API binding is `furni-bc/0`. If it is an ordinary API furniture ID, its binding is `furni/2147418112`. The read-only workflow reports which binding exists; it does not guess a write destination. Missing controller globals do not prevent this initial binding check from succeeding.
 

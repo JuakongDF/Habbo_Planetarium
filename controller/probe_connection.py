@@ -7,7 +7,9 @@ import json
 import os
 from pathlib import Path
 import sys
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
+from urllib.request import Request
 
 from realtime import ApiError, ConfigurationError, HabboClient, integer, log
 
@@ -46,6 +48,18 @@ def read_value(client, path):
         return {"found": False, "error": str(exc)}
 
 
+def public_api_check(client, origin):
+    """Compare a public endpoint without sending any room credentials."""
+    request = Request(origin + "/api/public/achievements", headers={"Accept": "application/json"})
+    try:
+        with client.opener.open(request, timeout=10) as response:
+            return {"status": response.status, "content_type": response.headers.get_content_type()}
+    except HTTPError as exc:
+        return {"status": exc.code, "content_type": exc.headers.get_content_type()}
+    except (URLError, TimeoutError, OSError):
+        return {"status": None, "error": "network_error"}
+
+
 def probe(config, client):
     candidates = []
     for candidate in config["candidates"]:
@@ -66,6 +80,7 @@ def main():
     try:
         config = validate_connection(json.loads(args.config.read_text()))
         client = HabboClient(config, os.environ.get("HABBO_READ_KEY"), None)
+        log("public_api_check", **public_api_check(client, config["hotel_origin"]))
         result = probe(config, client)
         log("connection_probe", **result)
         return 0 if result["unique_binding"] else 1

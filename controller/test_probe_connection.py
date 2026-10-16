@@ -2,6 +2,9 @@ import copy
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import Mock
+from urllib.error import HTTPError
+from email.message import Message
 
 import probe_connection as probe
 from realtime import ApiError, ConfigurationError
@@ -41,6 +44,16 @@ class ProbeTests(unittest.TestCase):
         config["candidates"][0]["entity_id"] = 0
         with self.assertRaises(ConfigurationError):
             probe.validate_connection(config)
+
+    def test_public_diagnostic_does_not_send_credentials(self):
+        headers = Message()
+        headers["Content-Type"] = "text/html"
+        client = Mock()
+        client.opener.open.side_effect = HTTPError("https://www.habbo.es", 463, "", headers, None)
+        result = probe.public_api_check(client, "https://www.habbo.es")
+        self.assertEqual(result, {"status": 463, "content_type": "text/html"})
+        request = client.opener.open.call_args.args[0]
+        self.assertEqual(request.headers, {"Accept": "application/json"})
 
 
 if __name__ == "__main__":

@@ -235,7 +235,19 @@ class HabboClient:
         except HTTPError as exc:
             if exc.code == 429 or exc.code >= 500:
                 raise RetryLater(f"HTTP {exc.code}", retry_after(exc.headers.get("Retry-After"))) from None
-            raise ApiError(f"HTTP {exc.code}; check room, keys and permanent variable bindings") from None
+            detail = ""
+            try:
+                error = json.loads(exc.read(8192)).get("error")
+                if isinstance(error, dict):
+                    error = error.get("code")
+                if error in ("wired.variables.key_missing", "wired.variables.key_invalid",
+                             "wired.variables.api_disabled", "wired.variables.room_not_found",
+                             "wired.variables.variable_not_found", "wired.variables.invalid_target"):
+                    detail = f"; {error}"
+            except (ValueError, AttributeError, TypeError):
+                pass
+            content_type = exc.headers.get_content_type() if hasattr(exc.headers, "get_content_type") else "unknown"
+            raise ApiError(f"HTTP {exc.code}; response_type={content_type}{detail}") from None
         except (URLError, TimeoutError, OSError):
             raise RetryLater("network_error") from None
         except (ValueError, UnicodeError):
