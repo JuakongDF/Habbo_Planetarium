@@ -23,10 +23,12 @@ def inspect(config, client):
     if not isinstance(definitions, dict):
         raise ApiError("Malformed definitions response")
     names_by_scope = {}
+    counts_by_scope = {}
     for scope in ("users", "furni", "global"):
         names = definitions.get(scope, [])
         if not isinstance(names, list):
             raise ApiError("Malformed definition names")
+        counts_by_scope[scope] = len(names)
         names_by_scope[scope] = [name for name in names if relevant(name)]
     candidate = config["candidates"][0]
     target = candidate["target_kind"] + "/" + str(candidate["entity_id"])
@@ -47,7 +49,7 @@ def inspect(config, client):
             entry["decoded_using_supplied_formula"] = decode_occupation(value)
         values[name] = entry
     # Check the user-supplied names too, even if a hotel's profile omits them.
-    names = set(names_by_scope["furni"]) | {"@occupation", "@altitude"}
+    names = set(names_by_scope["furni"]) | {"occupation", "altitude", "@occupation", "@altitude"}
     reads = {}
     for name in sorted(names - set(values)):
         try:
@@ -61,6 +63,8 @@ def inspect(config, client):
         except ApiError as exc:
             reads[name] = {"found": False, "error": str(exc)}
     return {"room": config["room_id"], "target": target,
+            "definition_counts": counts_by_scope,
+            "definition_total": sum(counts_by_scope.values()),
             "matching_definitions": names_by_scope,
             "profile_variable_count": len(variables), "native_values": values,
             "additional_reads": reads, "writes_performed": False}

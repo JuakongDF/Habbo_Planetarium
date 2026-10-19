@@ -27,6 +27,10 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(result["native_values"]["native@occupation"]["decoded_using_supplied_formula"]["x"], 14)
         self.assertNotIn("private", str(result))
         self.assertTrue(all(method == "GET" for method, _ in requests))
+        self.assertEqual(result["definition_counts"], {"users": 0, "furni": 3, "global": 0})
+        self.assertEqual(result["definition_total"], 3)
+        self.assertIn(("GET", "/furni/occupation/furni-bc/0"), requests)
+        self.assertIn(("GET", "/furni/altitude/furni-bc/0"), requests)
 
 
 if __name__ == "__main__":
