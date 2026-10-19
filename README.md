@@ -18,6 +18,8 @@ Store API keys only under **Settings → Secrets and variables → Actions** as 
 
 ## Manual Sun test
 
+The proposed native `@occupation`/`@altitude` approach and the latest echo inspection are recorded in [Native control](controller/NATIVE_CONTROL.md). Those native values are different from the packed `test1` protocol; do not connect the existing packed writer directly to native occupation.
+
 **Actions → Real-time Sun test → Run workflow** defaults to `preview`. It validates the actual control values, loads the JPL DE440s ephemeris, and calculates the current Sun position for the observer selected in the room. Preview performs only room reads and does not receive the write key. Observer 1 is the Santiago example; observer 2 is Greenwich. Select the intended site before a live demonstration.
 
 After the WIRED decoder is configured and its movement range is calibrated, use `live` with the initial 60-second duration. This mode writes the packed current-state value to `test1` on BC item 0 every ten seconds while `astra_enabled` is 1. With `astra_enabled` set to 0, the loop only polls. Both manual workflows share one concurrency group. Neither creates a recurring schedule.
