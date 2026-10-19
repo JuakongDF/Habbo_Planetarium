@@ -24,4 +24,4 @@ jobs:
       - name: Read exposed occupation and altitude
         env:
           HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
-        run: python3 controller/inspect_native.py
+        run: python3 controller/inspect_native.py --check-cache

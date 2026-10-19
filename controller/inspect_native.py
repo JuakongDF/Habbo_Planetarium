@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 from urllib.parse import quote
+from urllib.error import HTTPError
 
 from probe_connection import validate_connection
 from realtime import ApiError, ConfigurationError, HabboClient, integer, log
@@ -16,6 +17,37 @@ def relevant(name):
 def decode_occupation(value):
     value = integer(value, 0, 2**63-1, "occupation")
     return {"x": value // 65536, "y": (value // 256) % 256, "rotation": value % 256}
+
+
+class CacheDiagnosticOpener:
+    """Record only cache-related response headers, never credentials or bodies."""
+
+    def __init__(self, opener):
+        self.opener = opener
+        self.revalidate = False
+        self.responses = []
+
+    def open(self, request, timeout):
+        if self.revalidate:
+            request.add_header("Cache-Control", "no-cache")
+            request.add_header("Pragma", "no-cache")
+        try:
+            response = self.opener.open(request, timeout=timeout)
+        except HTTPError as exc:
+            self.record(request, exc)
+            raise
+        self.record(request, response)
+        return response
+
+    def record(self, request, response):
+        allowed = ("Date", "Age", "Cache-Control", "Expires", "CF-Cache-Status", "X-Cache")
+        self.responses.append({
+            "revalidation_requested": self.revalidate,
+            "path": request.selector,
+            "status": response.code,
+            "headers": {name: response.headers[name][:256] for name in allowed
+                        if response.headers.get(name) is not None},
+        })
 
 
 def inspect(config, client):
@@ -75,7 +107,16 @@ def main():
         path = Path(__file__).parent.parent / "connection.json"
         config = validate_connection(json.loads(path.read_text()))
         client = HabboClient(config, os.environ.get("HABBO_READ_KEY"), None)
-        log("native_inspection", **inspect(config, client))
+        if "--check-cache" in sys.argv[1:]:
+            observer = CacheDiagnosticOpener(client.opener)
+            client.opener = observer
+            ordinary = inspect(config, client)
+            observer.revalidate = True
+            revalidated = inspect(config, client)
+            log("cache_inspection", ordinary=ordinary, revalidated=revalidated,
+                responses=observer.responses, writes_performed=False)
+        else:
+            log("native_inspection", **inspect(config, client))
         return 0
     except (ApiError, ConfigurationError, OSError, KeyError, ValueError, TypeError) as exc:
         log("inspection_error", message=str(exc) if isinstance(exc, (ApiError, ConfigurationError))
