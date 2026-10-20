@@ -23,6 +23,9 @@
   },
   "projection": {
     "room_size": 56,
+    "diagonal_cells": 54,
+    "diagonal_start_x": 1,
+    "diagonal_start_y": 53,
     "horizon_height": 1000,
     "height_per_degree": 10
   },

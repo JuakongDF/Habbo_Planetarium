@@ -11,7 +11,9 @@
     "1": {"name": "Santiago (example)", "latitude": -33.45, "longitude": -70.67, "elevation_m": 570},
     "2": {"name": "Greenwich (example)", "latitude": 51.4779, "longitude": 0, "elevation_m": 46}
   },
-  "projection": {"room_size": 56, "horizon_height": 1000, "height_per_degree": 10},
+  "projection": {"room_size": 56, "diagonal_cells": 54,
+    "diagonal_start_x": 1, "diagonal_start_y": 53,
+    "horizon_height": 1000, "height_per_degree": 10},
   "motion_bridge": {
     "occupation_variable": "occupation",
     "altitude_variable": "altitude",

@@ -53,13 +53,20 @@ class CodecAndGeometryTests(unittest.TestCase):
 
     def test_cardinal_geometry_and_altitude(self):
         p = config()["projection"]
-        self.assertEqual(r.project(0, 90, p)["index"], 0)
-        self.assertEqual(r.project(0, 270, p)["index"], 55)
+        cells = p.get("diagonal_cells", p["room_size"])
+        start_x = p.get("diagonal_start_x", 0)
+        start_y = p.get("diagonal_start_y", cells-1)
+        east = r.project(0, 90, p)
+        west = r.project(0, 270, p)
+        self.assertEqual((east["index"], east["x"], east["y"]),
+                         (cells-1, start_x+cells-1, start_y-cells+1))
+        self.assertEqual((west["index"], west["x"], west["y"]),
+                         (0, start_x, start_y))
         self.assertEqual(r.project(90, 0, p)["height"], 1900)
         self.assertEqual(r.project(-90, 0, p)["height"], 100)
         for az in range(361):
             point = r.project(35, az, p)
-            self.assertEqual(point["x"]+point["y"], 55)
+            self.assertEqual(point["x"]-point["y"], start_x-start_y+2*point["index"])
         self.assertEqual(r.project(-0.01, 90, p)["visible"], 0)
 
     def test_live_configuration_rejects_placeholders_and_bad_ranges(self):

@@ -74,7 +74,8 @@ class DirectVariableWriteTests(unittest.TestCase):
             "moon": {"target_kind": "furni", "furni_id": 523624626,
                      "state_variable": "state"},
             "observers": {"1": {"latitude": -33.45}},
-            "projection": {"room_size": 56},
+            "projection": {"room_size": 56, "diagonal_cells": 54,
+                           "diagonal_start_x": 1, "diagonal_start_y": 53},
             "motion_bridge": {"occupation_variable": "occupation",
                               "altitude_variable": "altitude",
                               "screen_aspect_ratio": 19/16,
@@ -84,13 +85,24 @@ class DirectVariableWriteTests(unittest.TestCase):
         frame = sun.moon_command_frame(FakeEphemeris(), config, 1, 123)
         self.assertEqual((frame["state"], frame["rotation"]), (1, 0))
         self.assertGreater(frame["height"], 0)
-        self.assertEqual(frame["x"] + frame["y"], 55)
+        self.assertEqual(frame["x"] + frame["y"], 54)
 
     def test_east_and_west_map_to_correct_diagonal_ends(self):
-        projection = {"room_size": 56, "horizon_height": 3500}
+        projection = {"room_size": 56, "diagonal_cells": 54,
+                      "diagonal_start_x": 1, "diagonal_start_y": 53,
+                      "horizon_height": 3500}
         east = sun.project_screen_ellipse(0, 90, projection, 19/16, 107.95)
         west = sun.project_screen_ellipse(0, 270, projection, 19/16, 107.95)
-        self.assertEqual((east["index"], west["index"]), (0, 55))
+        self.assertEqual((east["index"], east["x"], east["y"]), (53, 54, 0))
+        self.assertEqual((west["index"], west["x"], west["y"]), (0, 1, 53))
+
+    def test_54_cell_diagonal_has_two_middle_cells(self):
+        projection = {"room_size": 56, "diagonal_cells": 54,
+                      "diagonal_start_x": 1, "diagonal_start_y": 53,
+                      "horizon_height": 3500}
+        midpoint = sun.project_screen_ellipse(0, 0, projection, 19/16, 107.95)
+        self.assertEqual((midpoint["x"], midpoint["y"], midpoint["index"]), (28, 26, 27))
+        self.assertEqual((1+26, 53-26), (27, 27))
 
     def test_intrinsic_offsets_keep_visible_body_ranges_aligned(self):
         class FakeEphemeris:
@@ -99,7 +111,8 @@ class DirectVariableWriteTests(unittest.TestCase):
 
         config = {
             "bodies": [{"intrinsic_altitude_offset": 700}],
-            "projection": {"room_size": 56},
+            "projection": {"room_size": 56, "diagonal_cells": 54,
+                           "diagonal_start_x": 1, "diagonal_start_y": 53},
             "motion_bridge": {"occupation_variable": "occupation",
                               "altitude_variable": "altitude",
                               "screen_aspect_ratio": 19/16,

@@ -82,6 +82,7 @@ def validate_config(c, live=False):
         raise ConfigurationError("Unknown default observer")
     p = c["projection"]
     p["room_size"] = integer(p["room_size"], 2, 56, "room_size")
+    diagonal_geometry(p)
     finite(p["horizon_height"], 0, 2047, "horizon_height")
     finite(p["height_per_degree"], 0.001, 100, "height_per_degree")
     if not (0 <= p["horizon_height"] - 90*p["height_per_degree"] and
@@ -130,11 +131,22 @@ def project(altitude, azimuth, p):
     finite(azimuth, 0, 360, "azimuth")
     # Orthographic east component; northern/southern directions overlap.
     east = math.cos(math.radians(altitude)) * math.sin(math.radians(azimuth))
-    # In this room, increasing the diagonal index points west, so invert east.
-    index = math.floor((p["room_size"]-1) * (1-east) / 2 + 0.5)
+    # The diagonal index increases eastward, from (1,53) to (54,0).
+    cells, start_x, start_y = diagonal_geometry(p)
+    index = math.floor((cells-1) * (1+east) / 2 + 0.5)
     height = math.floor(p["horizon_height"] + p["height_per_degree"]*altitude + 0.5)
-    return dict(index=index, x=index, y=p["room_size"]-1-index,
+    return dict(index=index, x=start_x+index, y=start_y-index,
                 height=height, visible=int(altitude >= 0))
+
+
+def diagonal_geometry(p):
+    room_size = p["room_size"]
+    cells = integer(p.get("diagonal_cells", room_size), 2, room_size, "diagonal_cells")
+    start_x = integer(p.get("diagonal_start_x", 0), 0, room_size-1, "diagonal_start_x")
+    start_y = integer(p.get("diagonal_start_y", cells-1), 0, room_size-1, "diagonal_start_y")
+    if start_x + cells > room_size or start_y - cells + 1 < 0:
+        raise ConfigurationError("Configured diagonal endpoints fall outside the room")
+    return cells, start_x, start_y
 
 
 def lunar_phase(separation_degrees, sun_ecliptic_longitude, moon_ecliptic_longitude):
@@ -157,14 +169,15 @@ def project_screen_ellipse(altitude, azimuth, p, screen_aspect_ratio, native_hei
     aspect = finite(screen_aspect_ratio, 0.5, 4, "screen_aspect_ratio")
     units = finite(native_height_units_per_tile, 0.1, 200, "native_height_units_per_tile")
     east = math.cos(math.radians(altitude)) * math.sin(math.radians(azimuth))
-    # The room's west-east diagonal runs opposite the astronomical east component.
-    index = math.floor((p["room_size"]-1) * (1-east) / 2 + 0.5)
+    # The room's diagonal index increases eastward.
+    cells, start_x, start_y = diagonal_geometry(p)
+    index = math.floor((cells-1) * (1+east) / 2 + 0.5)
     horizontal_radius_tiles = (p["room_size"]-1) / 2
     vertical_radius_tiles = horizontal_radius_tiles / aspect
     height = math.floor(p["horizon_height"] + vertical_radius_tiles * units *
                         math.sin(math.radians(altitude)) + 0.5)
     integer(height, 0, 10000, "projected height")
-    return dict(index=index, x=index, y=p["room_size"]-1-index,
+    return dict(index=index, x=start_x+index, y=start_y-index,
                 height=height, visible=1)
 
 
