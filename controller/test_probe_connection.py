@@ -30,7 +30,7 @@ class ProbeTests(unittest.TestCase):
         self.assertTrue(result["unique_binding"])
         self.assertFalse(result["ready_for_controller"])
         self.assertTrue(result["candidates"][1]["found"])
-        self.assertEqual(len(requests), 4)
+        self.assertEqual(len(requests), 5)
         self.assertTrue(all(method == "GET" for method, _ in requests))
         self.assertNotIn("9223372036854775807", json.dumps(result))
 
@@ -62,10 +62,10 @@ class ProbeTests(unittest.TestCase):
             def request(self, method, path, **kwargs):
                 requests.append((method, path, kwargs))
                 if path == "":
-                    return {"users": [], "furni": [], "global": ["test1", "private_name"]}
+                    return {"users": [], "furni": [], "global": ["occupation", "private_name"]}
                 return {"variables": {}}
         result = probe.diagnose_setup(self.config(), Client())
-        self.assertEqual(result["definitions"]["scopes"]["global"]["matching_names"], ["test1"])
+        self.assertEqual(result["definitions"]["scopes"]["global"]["matching_names"], ["occupation"])
         self.assertTrue(all(p["exists"] for p in result["profiles"]))
         self.assertNotIn("private_name", json.dumps(result))
         self.assertTrue(all(method == "GET" for method, _, _ in requests))
