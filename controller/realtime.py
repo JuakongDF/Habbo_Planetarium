@@ -62,10 +62,14 @@ def validate_config(c, live=False):
         raise ConfigurationError("hotel_origin must be a plain HTTPS origin")
     c["hotel_origin"] = c["hotel_origin"].rstrip("/")
     c["room_id"] = integer(c["room_id"], 1 if live else 0, 2**63-1, "room_id")
-    for key in ("state_variable", "observer_variable", "enabled_variable"):
+    for key in ("state_variable", "observer_variable", "enabled_variable",
+                "update_request_variable"):
+        if key == "update_request_variable" and key not in c:
+            c[key] = "update_request"
         if not isinstance(c[key], str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,39}", c[key]):
             raise ConfigurationError(f"Invalid {key}")
-    if len({c[k] for k in ("state_variable", "observer_variable", "enabled_variable")}) != 3:
+    if len({c[k] for k in ("state_variable", "observer_variable", "enabled_variable",
+                           "update_request_variable")}) != 4:
         raise ConfigurationError("Variable names must be distinct")
     finite(c["poll_seconds"], 1, 60, "poll_seconds")
     finite(c["update_seconds"], 1, 60, "update_seconds")
@@ -346,6 +350,23 @@ class HabboClient:
             raise ConfigurationError("Room selected an unknown observer; no frame sent")
         return bool(enabled), observer
 
+    def controls_with_update_request(self):
+        enabled, observer = self.controls()
+        name = self.config["update_request_variable"]
+        result = self.request("GET", "/global/" + quote(name, safe=""))
+        if not isinstance(result, dict) or "value" not in result:
+            raise ApiError("Malformed update request response")
+        update_request = integer(result["value"], 0, 2**63-1, "update request")
+        return enabled, observer, update_request
+
+    def clear_update_request(self):
+        name = self.config["update_request_variable"]
+        result = self.request("PATCH", "/global/" + quote(name, safe=""),
+                              {"value": "0"}, costs={"write": 1})
+        if not isinstance(result, dict) or integer(result.get("value"), 0,
+                                                    2**63-1, "update request") != 0:
+            raise ApiError("Could not clear update request")
+
     def preflight(self):
         enabled, observer = self.controls()
         for body in self.config["bodies"]:
@@ -358,13 +379,19 @@ class HabboClient:
         return dict(enabled=enabled, observer=observer, bindings=len(self.config["bodies"]))
 
     def publish(self, rows):
+        return self.publish_variable(self.config["state_variable"], rows)
+
+    def publish_variable(self, variable, rows):
+        if not isinstance(variable, str) or not re.fullmatch(
+                r"[A-Za-z][A-Za-z0-9_]{0,39}", variable):
+            raise ConfigurationError("Invalid batch variable name")
         requests = [dict(op_id=f'{row.get("target_kind", "furni")}/{row["furni_id"]}', method="PATCH",
                          path=f'{row.get("target_kind", "furni")}/{row["furni_id"]}', body={"value": row["value"]})
                     for row in rows]
         n = len(requests)
         if not 1 <= n <= 10 or len({r["op_id"] for r in requests}) != n:
             raise ConfigurationError("Invalid prototype batch")
-        result = self.request("POST", "/furni/" + quote(self.config["state_variable"], safe="") + "/batch",
+        result = self.request("POST", "/furni/" + quote(variable, safe="") + "/batch",
                               {"requests": requests}, {"write": n+1, "batch": 1, "batch_write": n})
         statuses = {}
         if not isinstance(result, dict) or not isinstance(result.get("results"), list):

@@ -206,6 +206,42 @@ class DirectVariableWriteTests(unittest.TestCase):
         galaxy = next(item for item in targets if item["furni_id"] == 1241761742)
         self.assertEqual(galaxy["intrinsic_altitude_offset"], 500)
 
+    def test_update_request_refresh_builds_chunked_batches_for_every_sky_furni(self):
+        import json
+        from pathlib import Path
+
+        class FakeEphemeris:
+            def apparent_altaz(self, observer, body, timestamp):
+                return 12, 90
+
+            def moon_phase(self, observer, timestamp):
+                return {"illumination": 0.6, "waxing": True,
+                        "elongation_degrees": 120}
+
+            def fixed_star_altaz(self, observer, ra, dec, timestamp):
+                return dec, 90
+
+        config = json.loads((Path(__file__).parent / "config.habbo-es.json").read_text())
+        config = sun.validate_config(config, live=True)
+        sun.validate_constellations(config, live=True)
+        bridge = config["motion_bridge"]
+        fixed_sky = [{"config": item, "target": f"furni/{item['furni_id']}",
+                      "rotation": 0, "values": {}}
+                     for item in config["constellations"]]
+        jobs, frames = sun.build_refresh_jobs(
+            FakeEphemeris(), config, config["default_observer"], 1_800_000_000,
+            bridge, "furni-bc/0", 0, "furni/523624626", fixed_sky)
+
+        self.assertEqual([job["variable"] for job in jobs],
+                         ["state", "altitude", "altitude", "occupation", "occupation"])
+        self.assertEqual([len(job["rows"]) for job in jobs], [1, 10, 5, 10, 5])
+        self.assertEqual(len(frames), 15)
+        self.assertEqual(sum(len(job["rows"]) for job in jobs), 31)
+        self.assertEqual([row["target"] for row in jobs[0]["rows"]], ["furni/523624626"])
+        self.assertNotIn("state", [row["target"] for row in jobs[0]["rows"]
+                                    if row["target"] != "furni/523624626"])
+        self.assertTrue(all(len(job["rows"]) <= 10 for job in jobs))
+
 
 if __name__ == "__main__":
     unittest.main()

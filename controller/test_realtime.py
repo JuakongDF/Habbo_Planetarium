@@ -94,6 +94,16 @@ class TransportTests(unittest.TestCase):
         self.assertTrue(all("X-wired-write-key" not in q.headers for q in opener.requests))
         self.assertTrue(opener.requests[-1].full_url.endswith("/furni/astra_state/furni/101"))
 
+    def test_update_request_is_polled_and_cleared_with_write_key(self):
+        client, opener = self.client({"value": "1"}, {"value": "1"}, {"value": "17"},
+                                     {"value": "0"})
+        self.assertEqual(client.controls_with_update_request(), (True, 1, 17))
+        self.assertTrue(opener.requests[2].full_url.endswith("/global/update_request"))
+        client.clear_update_request()
+        self.assertEqual(opener.requests[3].method, "PATCH")
+        self.assertTrue(opener.requests[3].full_url.endswith("/global/update_request"))
+        self.assertEqual(json.loads(opener.requests[3].data), {"value": "0"})
+
     def test_unknown_observer_fails_without_writes(self):
         client, opener = self.client({"value": 1}, {"value": 255})
         with self.assertRaises(r.ConfigurationError):
@@ -111,6 +121,13 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(request.headers["User-agent"], r.USER_AGENT)
         self.assertEqual(json.loads(request.data)["requests"][0],
                          dict(op_id="furni/101", method="PATCH", path="furni/101", body={"value": str(word)}))
+
+    def test_batch_can_target_any_permanent_furni_variable(self):
+        client, opener = self.client({"results": [{"op_id": "furni/101", "status": 200}]})
+        self.assertEqual(client.publish_variable("occupation", [
+            {"furni_id": 101, "value": "123"}
+        ]), 1)
+        self.assertTrue(opener.requests[0].full_url.endswith("/furni/occupation/batch"))
 
     def test_bc_zero_id_routes_without_reapplying_offset(self):
         c = config()

@@ -226,11 +226,56 @@ def write_moon_command(client, target, bridge, state_variable, frame, current_va
     return written
 
 
+def build_refresh_jobs(ephemeris, config, observer, timestamp, bridge, sun_target,
+                       sun_rotation, moon_target, fixed_sky):
+    """Build API batches grouped by variable; each batch is limited to 10 furni."""
+    state_variable = config["moon"]["state_variable"]
+    rows_by_variable = {state_variable: [], bridge["altitude_variable"]: [],
+                        bridge["occupation_variable"]: []}
+    frames = []
+
+    def add_frame(target_kind, furni_id, frame, state=None):
+        target = f"{target_kind}/{furni_id}"
+        if state is not None:
+            rows_by_variable[state_variable].append(
+                {"target_kind": target_kind, "furni_id": furni_id, "value": str(state),
+                 "target": target})
+        rows_by_variable[bridge["altitude_variable"]].append(
+            {"target_kind": target_kind, "furni_id": furni_id,
+             "value": str(frame["height"]), "target": target})
+        rows_by_variable[bridge["occupation_variable"]].append(
+            {"target_kind": target_kind, "furni_id": furni_id,
+             "value": str(frame["occupation"]), "target": target})
+        frames.append((target, frame, state))
+
+    sun_body = config["bodies"][0]
+    sun_frame = command_frame(ephemeris, config, observer, timestamp, sun_rotation)
+    add_frame(sun_body.get("target_kind", "furni"), sun_body["furni_id"], sun_frame)
+
+    moon_config = config["moon"]
+    moon_frame = moon_command_frame(ephemeris, config, observer, timestamp)
+    add_frame(moon_config["target_kind"], moon_config["furni_id"], moon_frame,
+              state=moon_frame["state"])
+
+    for profile in fixed_sky:
+        item = profile["config"]
+        frame = constellation_command_frame(
+            ephemeris, config, item, observer, timestamp, profile["rotation"])
+        add_frame(item.get("target_kind", "furni"), item["furni_id"], frame)
+
+    jobs = []
+    for variable in (state_variable, bridge["altitude_variable"], bridge["occupation_variable"]):
+        rows = rows_by_variable[variable]
+        for start in range(0, len(rows), 10):
+            jobs.append({"variable": variable, "rows": rows[start:start+10]})
+    return jobs, frames
+
+
 def run(config, client, ephemeris, duration):
-    enabled, observer = client.controls()
+    enabled, observer, update_request = client.controls_with_update_request()
     if not enabled:
-        log("room_disabled", observer=observer, writes_performed=False)
-        return
+        log("room_disabled", observer=observer, writes_performed=False,
+            update_request=update_request)
     bridge, target, rotation, current_occupation, current_altitude, definitions = definitions_and_profile(client, config)
     moon_config = config["moon"]
     moon_target, moon_values = read_furni_profile(
@@ -260,6 +305,13 @@ def run(config, client, ephemeris, duration):
             raise ConfigurationError("Projected command altitudes must fit the supported 0…10000 range")
     deadline = time.monotonic() + duration
     next_poll = next_update = 0
+    pending_batch_jobs = None
+    pending_batch_index = 0
+    pending_request_value = None
+    refresh_again = False
+    refresh_after_enable = False
+    last_seen_update_request = 0
+    update_request_ack_pending = False
     current_values = {bridge["occupation_variable"]: current_occupation,
                       bridge["altitude_variable"]: current_altitude}
     last_frame = (current_occupation, current_altitude)
@@ -269,13 +321,82 @@ def run(config, client, ephemeris, duration):
         now = time.monotonic()
         try:
             if now >= next_poll:
-                controls = client.controls()
-                if controls != (enabled, observer):
-                    enabled, observer = controls
+                controls = client.controls_with_update_request()
+                new_enabled, new_observer, update_request = controls
+                if (new_enabled, new_observer) != (enabled, observer):
+                    enabled, observer = new_enabled, new_observer
                     log("room_controls", enabled=enabled, observer=observer)
                     next_update = 0
+                    if pending_batch_jobs is not None:
+                        refresh_again = True
+                if update_request == 0:
+                    last_seen_update_request = 0
+                elif enabled and update_request != last_seen_update_request:
+                    last_seen_update_request = update_request
+                    update_request_ack_pending = True
+                    if pending_batch_jobs is None:
+                        pending_batch_jobs, _ = build_refresh_jobs(
+                            ephemeris, config, observer, time.time(), bridge, target,
+                            rotation, moon_target, fixed_sky)
+                        pending_batch_index = 0
+                        pending_request_value = update_request
+                        log("update_request_received", value=update_request,
+                            batches=len(pending_batch_jobs), observer=observer)
+                    else:
+                        refresh_again = True
+                        log("update_request_coalesced", value=update_request)
+                if update_request_ack_pending and enabled:
+                    client.clear_update_request()
+                    update_request_ack_pending = False
                 next_poll = time.monotonic() + config["poll_seconds"]
-            if enabled and time.monotonic() >= next_update:
+            if not enabled and pending_batch_jobs is not None:
+                pending_batch_jobs = None
+                pending_batch_index = 0
+                pending_request_value = None
+                refresh_again = False
+                refresh_after_enable = True
+                log("resync_paused", reason="room_disabled")
+            if enabled and refresh_after_enable and pending_batch_jobs is None:
+                pending_batch_jobs, _ = build_refresh_jobs(
+                    ephemeris, config, observer, time.time(), bridge, target,
+                    rotation, moon_target, fixed_sky)
+                pending_batch_index = 0
+                pending_request_value = "room_reenabled"
+                refresh_after_enable = False
+                log("resync_started", reason="room_reenabled",
+                    batches=len(pending_batch_jobs), observer=observer)
+            if enabled and pending_batch_jobs is not None:
+                if pending_batch_index < len(pending_batch_jobs):
+                    job = pending_batch_jobs[pending_batch_index]
+                    count = client.publish_variable(job["variable"], job["rows"])
+                    for row in job["rows"]:
+                        current = current_values if row["target"] == target else (
+                            moon_current if row["target"] == moon_target else
+                            next(profile["values"] for profile in fixed_sky
+                                 if profile["target"] == row["target"]))
+                        current[job["variable"]] = int(row["value"])
+                    log("celestial_batch", variable=job["variable"], furni_count=count,
+                        batch_number=pending_batch_index+1,
+                        batches=len(pending_batch_jobs), request=pending_request_value)
+                    pending_batch_index += 1
+                elif refresh_again:
+                    pending_batch_jobs, _ = build_refresh_jobs(
+                        ephemeris, config, observer, time.time(), bridge, target,
+                        rotation, moon_target, fixed_sky)
+                    pending_batch_index = 0
+                    pending_request_value = "coalesced"
+                    refresh_again = False
+                    log("resync_recomputed", batches=len(pending_batch_jobs), observer=observer)
+                else:
+                    log("resync_complete", request=pending_request_value,
+                        batches=len(pending_batch_jobs))
+                    pending_batch_jobs = None
+                    pending_batch_index = 0
+                    pending_request_value = None
+                    last_frame = (current_values[bridge["occupation_variable"]],
+                                  current_values[bridge["altitude_variable"]])
+                    next_update = time.monotonic() + config["update_seconds"]
+            elif enabled and time.monotonic() >= next_update:
                 sampled_at = time.time()
                 frame = command_frame(ephemeris, config, observer, sampled_at, rotation)
                 if last_frame != (frame["occupation"], frame["height"]):
@@ -330,6 +451,8 @@ def run(config, client, ephemeris, duration):
                         failures = 0
                 next_update = time.monotonic() + config["update_seconds"]
             wake = min(next_poll, next_update) if enabled else next_poll
+            if enabled and pending_batch_jobs is not None:
+                wake = time.monotonic()
             time.sleep(max(0, min(wake-time.monotonic(), deadline-time.monotonic())))
         except RetryLater as exc:
             failures += 1
@@ -377,7 +500,7 @@ def main():
             observer = config["default_observer"]
             if os.environ.get("HABBO_READ_KEY"):
                 reader = HabboClient(config, os.environ.get("HABBO_READ_KEY"), None)
-                _, observer = reader.controls()
+                _, observer, update_request = reader.controls_with_update_request()
                 definitions = reader.request("GET", "")
                 sun = config["bodies"][0]
                 _, sun_values = read_furni_profile(
@@ -390,6 +513,7 @@ def main():
                 fixed_sky = read_constellation_profiles(reader, definitions, config, bridge)
                 log("furni_preflight", sun_variables=sorted(sun_values),
                     moon_variables=sorted(moon_values), moon_state=moon_values[moon_config["state_variable"]],
+                    update_request=update_request,
                     fixed_sky_targets=len(fixed_sky),
                     fixed_sky_variables=sorted((bridge["occupation_variable"],
                                                  bridge["altitude_variable"], "state")))

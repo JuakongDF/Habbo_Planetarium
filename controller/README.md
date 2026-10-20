@@ -51,12 +51,15 @@ Configure these room variables and allow the required API access:
 | Scope/name | Initial value | Purpose |
 |---|---:|---|
 | Global `astra_enabled` | 0 | User-controlled master enable switch |
+| Global `update_request` | 0 | Optional WIRED refresh signal; any positive value requests a batched resync |
 | Global `astra_observer` | 1 | User-controlled site ID from the configured presets |
 | Permanent furni `astra_state` | 0 | Assign to the Sun marker; updated by batch PATCH |
 
 The process does not create definitions or bindings. PATCH intentionally fails if the state variable is absent, so first assign it through WIRED. Each body supports `target_kind: "furni"` or `"furni-bc"`. For BC items supply the already converted API ID, including zero; do not supply the offset in-game ID. Wall items are not supported by this movement prototype.
 
-The API reads the globals; it never overwrites the visitor's controls. The WIRED consumer must also check those controls locally to stop immediately when disabled and reject old-location packets. The two global reads are not an atomic snapshot; the packet's observer ID lets the consumer reject a selection that changed in flight. Once a future occupancy detector is verified, it can control the enable switch. Empty-room detection is not implemented by this prototype.
+The API reads `astra_enabled` and `astra_observer`; it never overwrites those visitor controls. It also polls `update_request` every five seconds. When that value is positive and the room is enabled, the controller computes one current snapshot for the Sun, Moon, and all fixed-sky targets, then sends grouped batches for `state`, `altitude`, and `occupation` (at most ten furni per batch). It clears `update_request` back to zero after accepting the signal so WIRED can request another refresh. Repeated signals during a batch are coalesced into one fresh snapshot. The WIRED consumer must check the enable and observer controls locally to stop immediately when disabled and reject old-location packets. These global reads are not an atomic snapshot. Once a future occupancy detector is verified, it can control the enable switch. Empty-room detection is not implemented by this prototype.
+
+During ordinary operation, the controller samples positions every 15 seconds and writes only variables whose values changed. The three control globals account for 36 reads per minute at the five-second poll interval; a refresh writes only when `update_request` is nonzero. The scheduled Actions workflow runs for 5 hours 55 minutes every six hours, so the monitor is not literally continuous: there is a short gap between scheduled jobs, plus any Actions startup delay.
 
 ## Decode the current-state packet in WIRED
 

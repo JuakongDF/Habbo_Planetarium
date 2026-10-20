@@ -4,6 +4,7 @@
   "state_variable": "test1",
   "observer_variable": "astra_observer",
   "enabled_variable": "astra_enabled",
+  "update_request_variable": "update_request",
   "poll_seconds": 5,
   "update_seconds": 15,
   "default_observer": 1,
