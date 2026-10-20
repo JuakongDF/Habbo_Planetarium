@@ -33,6 +33,12 @@
     "screen_horizon_height": 4500,
     "native_height_units_per_tile": 107.95
   },
+  "moon": {
+    "target_kind": "furni",
+    "furni_id": 523624626,
+    "state_variable": "state",
+    "full_moon_illumination_threshold": 0.5
+  },
   "bodies": [
     {
       "name": "sun",

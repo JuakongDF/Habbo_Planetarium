@@ -12,5 +12,18 @@
     "2": {"name": "Greenwich (example)", "latitude": 51.4779, "longitude": 0, "elevation_m": 46}
   },
   "projection": {"room_size": 56, "horizon_height": 1000, "height_per_degree": 10},
+  "motion_bridge": {
+    "occupation_variable": "occupation",
+    "altitude_variable": "altitude",
+    "screen_aspect_ratio": 1.1875,
+    "screen_horizon_height": 4500,
+    "native_height_units_per_tile": 107.95
+  },
+  "moon": {
+    "target_kind": "furni",
+    "furni_id": 1,
+    "state_variable": "state",
+    "full_moon_illumination_threshold": 0.5
+  },
   "bodies": [{"name": "sun", "furni_id": 0}]
 }

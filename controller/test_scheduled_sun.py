@@ -46,6 +46,62 @@ class DirectVariableWriteTests(unittest.TestCase):
         self.assertEqual((nadir["visible"], horizon["visible"], zenith["visible"]),
                          (1, 1, 1))
 
+    def test_moon_phase_split_uses_full_for_gibbous_and_crescent_for_crescent(self):
+        self.assertEqual(sun.moon_display_state(0.5, True, -33.45),
+                         {"state": 0, "rotation": 0})
+        self.assertEqual(sun.moon_display_state(0.49, True, -33.45),
+                         {"state": 1, "rotation": 0})
+        self.assertEqual(sun.moon_display_state(0.49, False, -33.45),
+                         {"state": 1, "rotation": 1})
+
+    def test_moon_rotation_mirrors_between_hemispheres(self):
+        self.assertEqual(sun.moon_display_state(0.2, True, 40),
+                         {"state": 1, "rotation": 1})
+        self.assertEqual(sun.moon_display_state(0.2, False, 40),
+                         {"state": 1, "rotation": 0})
+
+    def test_moon_frame_uses_live_position_phase_and_rotation(self):
+        class FakeEphemeris:
+            def apparent_altaz(self, observer, body, timestamp):
+                self.assertions = (observer, body, timestamp)
+                return -12.5, 270
+
+            def moon_phase(self, observer, timestamp):
+                return {"illumination": 0.25, "waxing": True,
+                        "elongation_degrees": 60}
+
+        config = {
+            "moon": {"target_kind": "furni", "furni_id": 523624626,
+                     "state_variable": "state"},
+            "observers": {"1": {"latitude": -33.45}},
+            "projection": {"room_size": 56},
+            "motion_bridge": {"occupation_variable": "occupation",
+                              "altitude_variable": "altitude",
+                              "screen_aspect_ratio": 19/16,
+                              "screen_horizon_height": 4500,
+                              "native_height_units_per_tile": 107.95},
+        }
+        frame = sun.moon_command_frame(FakeEphemeris(), config, 1, 123)
+        self.assertEqual((frame["state"], frame["rotation"]), (1, 0))
+        self.assertGreater(frame["height"], 0)
+        self.assertEqual(frame["x"] + frame["y"], 55)
+
+    def test_moon_writer_updates_only_changed_fields(self):
+        current = {"occupation": 986369, "altitude": 3958, "state": 0}
+        frame = {"occupation": 986369, "height": 3958, "state": 1}
+        written = sun.write_moon_command(self.client, "furni/523624626", self.bridge,
+                                         "state", frame, current)
+        self.assertEqual(written, ["state"])
+        self.assertEqual(self.client.requests, [
+            ("PATCH", "/furni/state/furni/523624626", {"value": "1"})
+        ])
+
+    def test_lunar_phase_marks_waxing_and_illumination(self):
+        phase = sun.lunar_phase(60, 10, 70)
+        self.assertAlmostEqual(phase["illumination"], 0.25)
+        self.assertTrue(phase["waxing"])
+        self.assertAlmostEqual(phase["elongation_degrees"], 60)
+
 
 if __name__ == "__main__":
     unittest.main()

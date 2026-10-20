@@ -136,6 +136,19 @@ def project(altitude, azimuth, p):
                 height=height, visible=int(altitude >= 0))
 
 
+def lunar_phase(separation_degrees, sun_ecliptic_longitude, moon_ecliptic_longitude):
+    """Calculate a simple illuminated fraction and waxing/waning flag."""
+    separation = finite(separation_degrees, 0, 180, "Sun-Moon separation")
+    sun_longitude = finite(sun_ecliptic_longitude, 0, 360, "Sun ecliptic longitude")
+    moon_longitude = finite(moon_ecliptic_longitude, 0, 360, "Moon ecliptic longitude")
+    elongation = (moon_longitude - sun_longitude) % 360
+    return {
+        "illumination": (1 - math.cos(math.radians(separation))) / 2,
+        "waxing": elongation < 180,
+        "elongation_degrees": elongation,
+    }
+
+
 def project_screen_ellipse(altitude, azimuth, p, screen_aspect_ratio, native_height_units_per_tile):
     """Project the full celestial direction, including below-horizon arcs, onto an ellipse."""
     finite(altitude, -90, 90, "altitude")
@@ -172,6 +185,18 @@ class Ephemeris:
         observer = self.observers[observer_id].at(instant)
         alt, az, _ = observer.observe(self.kernel[body_name]).apparent().altaz()
         return float(alt.degrees), float(az.degrees)
+
+    def moon_phase(self, observer_id, timestamp):
+        """Return illuminated fraction and waxing status for the selected site."""
+        from skyfield.framelib import ecliptic_frame
+        instant = self.timescale.from_datetime(datetime.fromtimestamp(timestamp, timezone.utc))
+        observer = self.observers[observer_id].at(instant)
+        sun = observer.observe(self.kernel["sun"]).apparent()
+        moon = observer.observe(self.kernel["moon"]).apparent()
+        separation = float(sun.separation_from(moon).degrees)
+        sun_longitude = float(sun.frame_latlon(ecliptic_frame)[1].degrees)
+        moon_longitude = float(moon.frame_latlon(ecliptic_frame)[1].degrees)
+        return lunar_phase(separation, sun_longitude, moon_longitude)
 
     def frame(self, observer_id, timestamp):
         rows = []

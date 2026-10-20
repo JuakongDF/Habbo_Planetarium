@@ -26,6 +26,10 @@ Direct reads of `@occupation` and `@altitude` still return `wired.variables.not_
 
 Each changed frame updates `altitude` when its value changes and updates `occupation` when the tile changes; it does not write an unchanged variable. The controller will not write while global `astra_enabled` is zero, and it reads the selected `astra_observer` from the room. The current sample locations are Santiago and Greenwich; add or replace sites in the config to match the real observer. Time zones are only needed to label local time; the Sun's position uses UTC and longitude.
 
+## Moon position and phase
+
+The controller also targets the Moon at API address `furni/523624626`. That item must have permanent furni variables `occupation`, `altitude`, and `state`, echoed to the matching internal WIRED variables `@occupation`, `@altitude`, and `@state`. It uses the selected observer coordinates (Santiago is observer `1`) for both the apparent position and phase. At least 50% illumination maps to state `0`; below 50% maps to state `1`. The rotation is `0` for waxing in the Southern Hemisphere and `1` for waning; the Northern Hemisphere reverses those values. Rotation is packed into `occupation`'s low byte. The full/gibbous versus crescent threshold is configurable. The controller validates both furniture profiles before writing either body, so missing Moon bindings stop the run without partially updating the Sun.
+
 The projection follows the Sun through the entire ellipse: negative altitude maps below the horizon and continues to the nadir, rather than holding the last position. The estimated range is about `2000` at nadir to `7000` at zenith. Native height scale still needs in-room calibration.
 
 The workflow starts on a six-hour schedule and runs for up to 5 hours 55 minutes per hosted job, leaving about five minutes for a handoff. Scheduled starts can still be delayed. It also has a manual one-frame preview and a bounded live mode. The monthly heartbeat writes a small timestamp log on the `automation-heartbeat` branch to keep scheduled workflows from going inactive.

@@ -1,4 +1,4 @@
-name: Scheduled Sun controller
+name: Scheduled Sun and Moon controller
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Preview one frame or run the live controller
+        description: Preview both bodies or run the live controller
         type: choice
         required: true
         default: preview
