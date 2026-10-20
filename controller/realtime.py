@@ -137,7 +137,7 @@ def project(altitude, azimuth, p):
 
 
 def project_screen_ellipse(altitude, azimuth, p, screen_aspect_ratio, native_height_units_per_tile):
-    """Project the Sun's direction onto a configurable screen-shaped ellipse."""
+    """Project the full celestial direction, including below-horizon arcs, onto an ellipse."""
     finite(altitude, -90, 90, "altitude")
     finite(azimuth, 0, 360, "azimuth")
     aspect = finite(screen_aspect_ratio, 0.5, 4, "screen_aspect_ratio")
@@ -150,7 +150,7 @@ def project_screen_ellipse(altitude, azimuth, p, screen_aspect_ratio, native_hei
                         math.sin(math.radians(altitude)) + 0.5)
     integer(height, 0, 10000, "projected height")
     return dict(index=index, x=index, y=p["room_size"]-1-index,
-                height=height, visible=int(altitude >= 0))
+                height=height, visible=1)
 
 
 class Ephemeris:

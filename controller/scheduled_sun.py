@@ -102,7 +102,6 @@ def run(config, client, ephemeris, duration):
                       bridge["altitude_variable"]: current_altitude}
     last_frame = (current_occupation, current_altitude)
     failures = 0
-    last_night_log = None
     while time.monotonic() < deadline:
         now = time.monotonic()
         try:
@@ -116,16 +115,9 @@ def run(config, client, ephemeris, duration):
             if enabled and time.monotonic() >= next_update:
                 sampled_at = time.time()
                 frame = command_frame(ephemeris, config, observer, sampled_at, rotation)
-                if frame["visible"] == 0:
-                    night_key = datetime.fromtimestamp(sampled_at, timezone.utc).date().isoformat()
-                    if last_night_log != night_key:
-                        log("sun_below_horizon", utc=datetime.fromtimestamp(
-                            sampled_at, timezone.utc).isoformat(), observer=observer,
-                            action="holding_last_position")
-                        last_night_log = night_key
-                elif last_frame != (frame["occupation"], frame["height"]):
+                if last_frame != (frame["occupation"], frame["height"]):
                     written = write_command(client, target, bridge, frame, current_values)
-                    log("sun_command", utc=datetime.fromtimestamp(
+                    log("sun_frame", utc=datetime.fromtimestamp(
                         sampled_at, timezone.utc).isoformat(), observer=observer,
                         altitude_degrees=round(frame["altitude_degrees"], 4),
                         azimuth_degrees=round(frame["azimuth_degrees"], 4),
@@ -133,7 +125,6 @@ def run(config, client, ephemeris, duration):
                         height=frame["height"], screen_aspect_ratio=bridge["screen_aspect_ratio"],
                         variables_written=written)
                     last_frame = (frame["occupation"], frame["height"])
-                    last_night_log = None
                     failures = 0
                 next_update = time.monotonic() + config["update_seconds"]
             wake = min(next_poll, next_update) if enabled else next_poll

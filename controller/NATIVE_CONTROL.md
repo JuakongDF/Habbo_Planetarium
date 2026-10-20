@@ -26,6 +26,6 @@ Direct reads of `@occupation` and `@altitude` still return `wired.variables.not_
 
 Each changed frame updates `altitude` when its value changes and updates `occupation` when the tile changes; it does not write an unchanged variable. The controller will not write while global `astra_enabled` is zero, and it reads the selected `astra_observer` from the room. The current sample locations are Santiago and Greenwich; add or replace sites in the config to match the real observer. Time zones are only needed to label local time; the Sun's position uses UTC and longitude.
 
-Below the horizon, the first version holds the last position. It does not yet hide or park the Sun. Native height scale and night behavior need in-room calibration before leaving the room enabled for a full day.
+The projection follows the Sun through the entire ellipse: negative altitude maps below the horizon and continues to the nadir, rather than holding the last position. The estimated range is about `2000` at nadir to `7000` at zenith. Native height scale still needs in-room calibration.
 
 The workflow starts on a six-hour schedule and runs for up to 5 hours 55 minutes per hosted job, leaving about five minutes for a handoff. Scheduled starts can still be delayed. It also has a manual one-frame preview and a bounded live mode. The monthly heartbeat writes a small timestamp log on the `automation-heartbeat` branch to keep scheduled workflows from going inactive.

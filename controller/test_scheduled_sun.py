@@ -36,6 +36,16 @@ class DirectVariableWriteTests(unittest.TestCase):
             "/furni/altitude/furni-bc/0", "/furni/occupation/furni-bc/0"
         ])
 
+    def test_projection_tracks_below_horizon_to_nadir(self):
+        projection = {"room_size": 56, "horizon_height": 4500}
+        nadir = sun.project_screen_ellipse(-90, 180, projection, 19/16, 107.95)
+        horizon = sun.project_screen_ellipse(0, 180, projection, 19/16, 107.95)
+        zenith = sun.project_screen_ellipse(90, 180, projection, 19/16, 107.95)
+        self.assertEqual((nadir["height"], horizon["height"], zenith["height"]),
+                         (2000, 4500, 7000))
+        self.assertEqual((nadir["visible"], horizon["visible"], zenith["visible"]),
+                         (1, 1, 1))
+
 
 if __name__ == "__main__":
     unittest.main()
