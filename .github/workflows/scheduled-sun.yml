@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: habbo-room-126070270
+  group: habbo-room-126070270${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'preview' && '-read-only' || '' }}
   cancel-in-progress: true
 
 jobs:
