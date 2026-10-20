@@ -61,7 +61,8 @@ def inspect(config, client):
         if not isinstance(names, list):
             raise ApiError("Malformed definition names")
         counts_by_scope[scope] = len(names)
-        names_by_scope[scope] = [name for name in names if relevant(name)]
+        names_by_scope[scope] = [name for name in names
+                                 if relevant(name) or (scope == "global" and "id" in name.casefold())]
     candidate = config["candidates"][0]
     target = candidate["target_kind"] + "/" + str(candidate["entity_id"])
     profile = client.request("GET", "/furni/" + target, resource="variables_profile",
@@ -81,7 +82,8 @@ def inspect(config, client):
             entry["decoded_using_supplied_formula"] = decode_occupation(value)
         values[name] = entry
     # Check the user-supplied names too, even if a hotel's profile omits them.
-    names = set(names_by_scope["furni"]) | {"occupation", "altitude", "@occupation", "@altitude"}
+    names = {name for name in names_by_scope["furni"] if relevant(name)}
+    names.update({"occupation", "altitude", "@occupation", "@altitude"})
     reads = {}
     for name in sorted(names - set(values)):
         try:
@@ -94,11 +96,21 @@ def inspect(config, client):
             reads[name] = {"found": True}
         except ApiError as exc:
             reads[name] = {"found": False, "error": str(exc)}
+    global_ids = [name for name in names_by_scope["global"] if "id" in name.casefold()]
+    global_values = {}
+    for name in global_ids:
+        try:
+            response = client.request("GET", "/global/" + quote(name, safe=""))
+            value = integer(response["value"], -(2**63), 2**63-1, "global selector value")
+            global_values[name] = str(value)
+        except ApiError as exc:
+            global_values[name] = {"error": str(exc)}
     return {"room": config["room_id"], "target": target,
             "definition_counts": counts_by_scope,
             "definition_total": sum(counts_by_scope.values()),
             "matching_definitions": names_by_scope,
             "profile_variable_count": len(variables), "native_values": values,
+            "global_id_values": global_values,
             "additional_reads": reads, "writes_performed": False}
 
 
