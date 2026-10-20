@@ -1,6 +1,7 @@
 """Apply one flat diagonal motion command through permanent WIRED variables."""
 import json
 import os
+import argparse
 from pathlib import Path
 import sys
 import time
@@ -111,9 +112,25 @@ def run(config, client):
 
 def main():
     try:
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("--reset-selector", action="store_true",
+                            help="clear only the selector left armed by this motion test")
+        args = parser.parse_args()
         path = Path(__file__).parent.parent / "connection.json"
         config = validate_connection(json.loads(path.read_text()))
         client = HabboClient(config, os.environ.get("HABBO_READ_KEY"), os.environ.get("HABBO_WRITE_KEY"))
+        if args.reset_selector:
+            trigger_path = "/global/" + TRIGGER_VARIABLE
+            current = read_int(client, trigger_path, "selector")
+            if current == 0:
+                log("selector_already_clear", writes_performed=False)
+                return 0
+            if current != ROOM_FURNI_ID:
+                raise ConfigurationError("Selector has a value other than this test's ID; refusing to clear it")
+            result = client.request("PATCH", trigger_path, {"value": "0"})
+            require_write_result(result, 0, "selector reset")
+            log("selector_cleared", previous_value=str(current), value="0", writes_performed=True)
+            return 0
         log("motion_api_test", **run(config, client))
         return 0
     except (ApiError, ConfigurationError, OSError, KeyError, ValueError, TypeError) as exc:
