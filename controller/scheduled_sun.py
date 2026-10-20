@@ -104,15 +104,15 @@ def write_command(client, target, bridge, frame, current_selector):
 
 
 def run(config, client, ephemeris, duration):
+    enabled, observer = client.controls()
+    if not enabled:
+        log("room_disabled", observer=observer, writes_performed=False)
+        return
     bridge, target, rotation = definitions_and_profile(client, config)
     for key, low, high in (("screen_aspect_ratio", 0.5, 4),
                            ("native_height_units_per_tile", 0.1, 100),
                            ("selector_settle_seconds", 0.05, 2)):
         finite(bridge[key], low, high, key)
-    enabled, observer = client.controls()
-    if not enabled:
-        log("room_disabled", observer=observer, writes_performed=False)
-        return
     deadline = time.monotonic() + duration
     next_poll = next_update = 0
     last_frame = None

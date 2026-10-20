@@ -18,6 +18,8 @@ So a flat step `(x+1,y-1)` changes occupation by `65280` and preserves rotation.
 
 The API test did not observe WIRED resetting `update_furni_id` to zero. The test runner cleared the selector after confirming it still held this test's Sun ID. The scheduled controller waits briefly for WIRED to clear the selector, then clears it itself if needed. The follow-up [cleanup run](https://github.com/JuakongDF/Habbo_Planetarium/actions/runs/39349755783) verified zero. The test left the permanent occupation command at `(37,17,0)`; the user confirmed the physical motion.
 
+A later room probe found `astra_enabled=0`, but the global `update_furni_id` definition returned 404 after cleanup. The controller checks the enable switch before requiring motion variables, so scheduled runs remain harmless while disabled. Before enabling motion, confirm that the global selector is visible again and defined as a permanent writable variable.
+
 Direct reads of `@occupation` and `@altitude` still return `wired.variables.not_found`. Their Echo values are not separate API bindings; they are the WIRED bridge into the internal furni state.
 
 ## Scheduled Sun projection
