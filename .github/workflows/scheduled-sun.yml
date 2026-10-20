@@ -1,4 +1,4 @@
-name: Scheduled Sun and Moon controller
+name: Scheduled Sun, Moon, and Constellation controller
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Preview both bodies or run the live controller
+        description: Preview all celestial furniture or run the live controller
         type: choice
         required: true
         default: preview
@@ -48,7 +48,7 @@ jobs:
           HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
           HABBO_WRITE_KEY: ${{ secrets.HABBO_WRITE_KEY }}
         run: python controller/scheduled_sun.py --ephemeris "$RUNNER_TEMP/de440s.bsp" --duration 21300
-      - name: Preview one current position
+      - name: Preview current celestial positions
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'preview'
         env:
           HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}

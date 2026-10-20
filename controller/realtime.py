@@ -201,6 +201,15 @@ class Ephemeris:
         alt, az, _ = observer.observe(self.kernel[body_name]).apparent().altaz()
         return float(alt.degrees), float(az.degrees)
 
+    def fixed_star_altaz(self, observer_id, ra_degrees, dec_degrees, timestamp):
+        """Apparent topocentric position of a fixed ICRS sky coordinate."""
+        from skyfield.api import Star
+        instant = self.timescale.from_datetime(datetime.fromtimestamp(timestamp, timezone.utc))
+        observer = self.observers[observer_id].at(instant)
+        star = Star(ra_hours=ra_degrees / 15, dec_degrees=dec_degrees)
+        alt, az, _ = observer.observe(star).apparent().altaz()
+        return float(alt.degrees), float(az.degrees)
+
     def moon_phase(self, observer_id, timestamp):
         """Return illuminated fraction and waxing status for the selected site."""
         from skyfield.framelib import ecliptic_frame

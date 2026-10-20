@@ -5,7 +5,7 @@
   "observer_variable": "astra_observer",
   "enabled_variable": "astra_enabled",
   "poll_seconds": 5,
-  "update_seconds": 10,
+  "update_seconds": 15,
   "default_observer": 1,
   "observers": {
     "1": {
@@ -43,6 +43,22 @@
     "full_moon_illumination_threshold": 0.5,
     "intrinsic_altitude_offset": 800
   },
+  "constellations": [
+    {"name": "capricornio", "furni_id": 1430121224, "ra_degrees": 315, "dec_degrees": -20},
+    {"name": "acuario", "furni_id": 1424879833, "ra_degrees": 330, "dec_degrees": -10},
+    {"name": "leo", "furni_id": 1429360122, "ra_degrees": 157.5, "dec_degrees": 15},
+    {"name": "piscis", "furni_id": 1424371985, "ra_degrees": 7.5, "dec_degrees": 15},
+    {"name": "virgo", "furni_id": 1430121279, "ra_degrees": 195, "dec_degrees": 0},
+    {"name": "aries", "furni_id": 1424371933, "ra_degrees": 37.5, "dec_degrees": 20},
+    {"name": "libra", "furni_id": 1424298371, "ra_degrees": 225, "dec_degrees": -15},
+    {"name": "tauro", "furni_id": 1289178599, "ra_degrees": 67.5, "dec_degrees": 17},
+    {"name": "sagitario", "furni_id": 1430121204, "ra_degrees": 285, "dec_degrees": -25},
+    {"name": "escorpio", "furni_id": 1289243336, "ra_degrees": 247.5, "dec_degrees": -30},
+    {"name": "geminis", "furni_id": 1424599474, "ra_degrees": 105, "dec_degrees": 22},
+    {"name": "cancer", "furni_id": 1288578525, "ra_degrees": 127.5, "dec_degrees": 20},
+    {"name": "centro_galaxia", "furni_id": 1241761742, "ra_degrees": 266.4168,
+      "dec_degrees": -29.0078, "intrinsic_altitude_offset": 500}
+  ],
   "bodies": [
     {
       "name": "sun",

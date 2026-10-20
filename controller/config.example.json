@@ -5,7 +5,7 @@
   "observer_variable": "astra_observer",
   "enabled_variable": "astra_enabled",
   "poll_seconds": 5,
-  "update_seconds": 10,
+  "update_seconds": 15,
   "default_observer": 1,
   "observers": {
     "1": {"name": "Santiago (example)", "latitude": -33.45, "longitude": -70.67, "elevation_m": 570},
@@ -28,5 +28,6 @@
     "full_moon_illumination_threshold": 0.5,
     "intrinsic_altitude_offset": 800
   },
+  "constellations": [],
   "bodies": [{"name": "sun", "furni_id": 0, "intrinsic_altitude_offset": 700}]
 }

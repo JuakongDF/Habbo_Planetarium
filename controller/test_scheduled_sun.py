@@ -7,7 +7,7 @@ class FakeClient:
     def __init__(self):
         self.requests = []
 
-    def request(self, method, path, body=None):
+    def request(self, method, path, body=None, costs=None):
         self.requests.append((method, path, body))
         return {"value": body["value"]}
 
@@ -149,6 +149,62 @@ class DirectVariableWriteTests(unittest.TestCase):
         self.assertAlmostEqual(phase["illumination"], 0.25)
         self.assertTrue(phase["waxing"])
         self.assertAlmostEqual(phase["elongation_degrees"], 60)
+
+    def test_fixed_constellation_frame_uses_fixed_sky_position_offset_and_rotation(self):
+        class FakeEphemeris:
+            def fixed_star_altaz(self, observer, ra, dec, timestamp):
+                self.requested = (observer, ra, dec, timestamp)
+                return 0, 90
+
+        config = {
+            "projection": {"room_size": 56, "diagonal_cells": 54,
+                           "diagonal_start_x": 1, "diagonal_start_y": 53},
+            "motion_bridge": {"occupation_variable": "occupation",
+                              "altitude_variable": "altitude",
+                              "screen_aspect_ratio": 19/16,
+                              "screen_horizon_height": 3500,
+                              "native_height_units_per_tile": 107.95},
+        }
+        item = {"name": "capricornio", "ra_degrees": 315, "dec_degrees": -20,
+                "intrinsic_altitude_offset": 0}
+        ephemeris = FakeEphemeris()
+        frame = sun.constellation_command_frame(ephemeris, config, item, 1, 123, 3)
+        self.assertEqual(ephemeris.requested, (1, 315, -20, 123))
+        self.assertEqual((frame["x"], frame["y"], frame["height"], frame["rotation"]),
+                         (54, 0, 3500, 3))
+        self.assertEqual(frame["occupation"], 54*65536 + 3)
+
+    def test_fixed_sky_profiles_require_all_three_variables_and_preserve_rotation(self):
+        class ProfileClient:
+            def request(self, method, path, payload=None, costs=None, resource="variables"):
+                self.assertion = (method, path, resource)
+                return {"variables": {"occupation": {"value": "986371"},
+                                      "altitude": {"value": "3500"},
+                                      "state": {"value": "1"}}}
+
+        config = {"constellations": [{"name": "leo", "target_kind": "furni",
+                                      "furni_id": 123, "state_variable": "state"}]}
+        profiles = sun.read_constellation_profiles(
+            ProfileClient(), {"furni": ["occupation", "altitude", "state"]}, config,
+            {"occupation_variable": "occupation", "altitude_variable": "altitude"})
+        self.assertEqual(profiles[0]["target"], "furni/123")
+        self.assertEqual(profiles[0]["rotation"], 3)
+        self.assertEqual(profiles[0]["values"],
+                         {"occupation": 986371, "altitude": 3500, "state": 1})
+
+    def test_config_contains_all_requested_fixed_sky_targets_and_galaxy_offset(self):
+        import json
+        from pathlib import Path
+        config = json.loads((Path(__file__).parent / "config.habbo-es.json").read_text())
+        targets = sun.validate_constellations(config, live=True)
+        self.assertEqual(len(targets), 13)
+        self.assertEqual({item["furni_id"] for item in targets}, {
+            1430121224, 1424879833, 1429360122, 1424371985, 1430121279,
+            1424371933, 1424298371, 1289178599, 1430121204, 1289243336,
+            1424599474, 1288578525, 1241761742,
+        })
+        galaxy = next(item for item in targets if item["furni_id"] == 1241761742)
+        self.assertEqual(galaxy["intrinsic_altitude_offset"], 500)
 
 
 if __name__ == "__main__":
