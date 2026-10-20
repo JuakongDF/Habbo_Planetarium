@@ -1,10 +1,10 @@
 {
   "hotel_origin": "https://www.habbo.es",
   "room_id": 126070270,
-  "variable": "test1",
+  "variable": "occupation",
   "supplied_in_game_or_api_id": 2147418112,
   "candidates": [
     {"target_kind": "furni-bc", "entity_id": 0}
   ],
-  "controls": ["astra_enabled", "astra_observer"]
+  "controls": ["astra_enabled", "astra_observer", "update_furni_id"]
 }

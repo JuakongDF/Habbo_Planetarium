@@ -2,34 +2,31 @@
 
 Real-time astronomical room prototype for [Habbo.es room 126070270](https://www.habbo.es/room/126070270).
 
-The first workflow is **Habbo connection test**, started manually from Actions. It uses only the existing `HABBO_READ_KEY` secret and does not change any room variable or move furniture. It first checks a public endpoint and the WIRED route without credentials, then makes three authenticated GETs: the supplied variable `test1` on `furni-bc/0`, plus the optional `astra_enabled` and `astra_observer` controls. An unauthenticated WIRED request normally returns a JSON 403 error; this comparison helps distinguish API errors from upstream HTML rejection pages.
+## Confirmed in-room bridge
 
-The user confirmed the marker is a Builder's Club item. Its in-game ID `2147418112` equals the documented BC offset (`0x7FFFFFFF - 0xFFFF`), so its API binding is `furni-bc/0`. Missing controller globals do not prevent this initial binding check from succeeding.
+The Sun has permanent furniture variables `occupation` and `altitude`, and a global selector variable `update_furni_id`. The Echo boxes link those API-visible variables to the internal `@occupation` and `@altitude` values. A one-tile live test moved the Sun from `(36,18)` to `(37,17)` along the west-east diagonal; the user's visual check confirmed the movement. [Motion test run](https://github.com/JuakongDF/Habbo_Planetarium/actions/runs/39349603144)
 
-Open **Actions → Habbo connection test → Run workflow**, and inspect the `connection_probe` JSON in the last step. `unique_binding: true` means exactly one candidate was found. `ready_for_controller` additionally requires the two room controls. HTTP errors are reported without keys or arbitrary response bodies.
+The controller writes `occupation`, writes `altitude`, and sends the Sun's in-game BC ID (`2147418112`) through `update_furni_id` last. The API address for that same item is `furni-bc/0`. The test showed that WIRED did not reset the global selector, so the controller now clears it after a short settle delay when WIRED leaves it set. It refuses to overlap updates while the selector is nonzero.
 
-If the binding is unavailable, the workflow additionally reads the room's variable definitions and the specified furniture profile. `setup_diagnosis` distinguishes a missing room, furniture entity, definition, or assigned variable. It reports only counts and names matching `test1`, without publishing other variable names or values.
+## Sun controller
 
-The [controller setup guide](controller/README.md) describes the existing local Sun preview and the later bounded live test. `controller/config.habbo-es.json` contains the confirmed room, variable and BC target. Its observer remains the example Santiago site until a location is selected. The generic example configuration retains placeholders. Live writes require the explicit `--live` option, write key, configured room controls and a prepared WIRED decoder. No recurring schedule or log-commit job is installed at this stage.
+The scheduled controller uses Skyfield and a local JPL DE440s ephemeris. It calculates the Sun's apparent topocentric position from UTC and the observer latitude/longitude selected in the room. The east component maps to the 56-cell west-east diagonal. Altitude maps to a screen-shaped ellipse with a configurable starting ratio of `19:16`; native vertical scale is also configurable and still needs room calibration.
 
-The HTTP client identifies itself as `HabboPlanetarium/0.1` with this repository URL. On 16 October 2026, the default Python user agent received HTML HTTP 463 responses on WIRED routes; the explicit application identifier allowed the unauthenticated request to reach the API and receive its normal missing-key JSON response.
+The scheduled job starts every six hours, runs for at most 5 hours 45 minutes, and stops publishing whenever global `astra_enabled` is zero. The last room check found `astra_enabled=0`, so the scheduler currently starts safely disabled. The manual **Scheduled Sun controller** workflow defaults to a read-only preview; its bounded live mode obeys the same room enable switch. The current observer table contains Santiago and Greenwich examples. Update it with the intended latitude/longitude before relying on the projection for a specific location.
 
-Store API keys only under **Settings → Secrets and variables → Actions** as `HABBO_READ_KEY` and `HABBO_WRITE_KEY`. The write key is not passed to this connection-test workflow. No keys belong in source, configuration files, screenshots or chat.
+At night, this first version holds the last position; it does not yet hide or park the Sun. Leave `astra_enabled=0` until the altitude scale and night behavior have been calibrated. GitHub-hosted jobs have a six-hour limit, and scheduled starts can be delayed or dropped during high load, so this is a prototype scheduler rather than a guaranteed always-on service. [GitHub Actions limits](https://docs.github.com/en/actions/reference/limits), [schedule behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
 
-## Manual Sun test
+A monthly heartbeat writes a timestamp to the `automation-heartbeat` branch to keep scheduled workflows from going inactive after prolonged repository inactivity.
 
-The proposed native `@occupation`/`@altitude` approach and the latest echo inspection are recorded in [Native control](controller/NATIVE_CONTROL.md). Those native values are different from the packed `test1` protocol; do not connect the existing packed writer directly to native occupation.
+## Credentials
 
-**Actions → Real-time Sun test → Run workflow** defaults to `preview`. It validates the actual control values, loads the JPL DE440s ephemeris, and calculates the current Sun position for the observer selected in the room. Preview performs only room reads and does not receive the write key. Observer 1 is the Santiago example; observer 2 is Greenwich. Select the intended site before a live demonstration.
+Store `HABBO_READ_KEY` and `HABBO_WRITE_KEY` only under **Settings → Secrets and variables → Actions**. The scheduled live step reads both from GitHub Secrets; neither key belongs in source, configuration files, screenshots, or chat.
 
-After the WIRED decoder is configured and its movement range is calibrated, use `live` with the initial 60-second duration. This mode writes the packed current-state value to `test1` on BC item 0 every ten seconds while `astra_enabled` is 1. With `astra_enabled` set to 0, the loop only polls. Both manual workflows share one concurrency group. Neither creates a recurring schedule.
+## Existing prototype tools
 
-Changing `test1` does not move a furni by itself. The room must have the decoder and movement logic described in [controller/README.md](controller/README.md#decode-the-current-state-packet-in-wired). Keep `astra_enabled` at 0 until that consumer is ready. Stopping the workflow does not reset the enable switch or clear the last value; the consumer must enforce its timestamp expiry.
+- **One-tile WIRED motion test:** verifies the permanent variable bridge; its selector cleanup mode clears only the Sun ID used by that test.
+- **Inspect Sun echo variables:** read-only inspection of room definitions and the Sun profile.
+- **Real-time Sun test:** legacy packed-state preview for `test1`; its live mode is not part of the new occupation/altitude scheduler.
+- **Connection test:** read-only API access and variable binding diagnostics.
 
-Run local checks with:
-
-```sh
-python3 -m unittest discover -s controller -p 'test_*.py' -v
-```
-
-API reference: [Habbo's public WIRED Variables documentation](https://sandbox.habbo.com/api/public/api-docs/#/Wired%20Variables). ID conversion follows the supplied Habbo developer notes; actual hotel support is established by the connection test.
+For the current bridge and calibration notes, see [controller/NATIVE_CONTROL.md](controller/NATIVE_CONTROL.md). The older packed-state prototype remains in [controller/README.md](controller/README.md) for reference.

@@ -1,39 +1,31 @@
-# Native occupation and altitude: next movement test
+# Permanent WIRED command bridge
 
-The user supplied and tested the internal encoding on 19 October 2026:
+The room exposes two ordinary permanent furniture variables on the Sun, `occupation` and `altitude`, plus global `update_furni_id`. The Echo boxes connect those values to the internal `@occupation` and `@altitude` variables. The Web API reads and writes the permanent variables; the Echo add-ons and WIRED selector perform the in-room movement.
+
+The Sun's in-game BC ID is `2147418112`; the API target is `furni-bc/0`. The global selector carries the in-game ID expected by WIRED.
+
+## Confirmed movement test
+
+The [one-tile API test](https://github.com/JuakongDF/Habbo_Planetarium/actions/runs/39349603144) read `(36,18,0)`, wrote the next flat-diagonal occupation `(37,17,0)`, kept altitude at `0`, and signaled the Sun ID. The user saw the Sun move one tile east along the diagonal.
+
+Occupation follows the user's encoding:
 
 ```
-@occupation = 65536*x + 256*y + rotation
+occupation = 65536*x + 256*y + rotation
 ```
 
-The existing packed `test1` format is a different application protocol. Never copy its 58-bit value directly into `@occupation`.
+So a flat step `(x+1,y-1)` changes occupation by `65280` and preserves rotation. The test established that the API command variables, selector, Echo boxes, and movement chain work together for this horizontal move.
 
-For the confirmed Sun, the in-game BC ID is 2147418112 and the API target remains `furni-bc/0`. An ID echo is unnecessary for selecting this known API entity. That does not establish that native occupation or altitude is readable/writable through the API.
+The API test did not observe WIRED resetting `update_furni_id` to zero. The test runner cleared the selector after confirming it still held this test's Sun ID. The scheduled controller waits briefly for WIRED to clear the selector, then clears it itself if needed. The follow-up [cleanup run](https://github.com/JuakongDF/Habbo_Planetarium/actions/runs/39349755783) verified zero. The test left the permanent occupation command at `(37,17,0)`; the user confirmed the physical motion.
 
-## Diagonal motion
+Direct reads of `@occupation` and `@altitude` still return `wired.variables.not_found`. Their Echo values are not separate API bindings; they are the WIRED bridge into the internal furni state.
 
-The flat west–east line holds `x+y` constant. A step `(x+1,y-1)` with unchanged rotation changes occupation by `65536-256 = 65280`. For the user's example:
+## Scheduled Sun projection
 
-| Pose | Occupation |
-|---|---:|
-| `(14,13,1)` | 920833 |
-| X-only step `(15,13,1)` | 986369 |
-| Flat diagonal step `(15,12,1)` | 986113 |
+`scheduled_sun.py` calculates the current apparent topocentric Sun position from UTC and the selected observer's latitude/longitude. It projects the eastward component onto the 56-cell west-east diagonal and maps altitude onto a configurable screen-shaped ellipse. The starting screen ratio is `19:16`; vertical scale is `32` native height units per tile-equivalent, centered at `1000`. These are calibration values, not measured Habbo screen geometry. They are in `controller/config.habbo-es.json` under `motion_bridge`.
 
-For the full 56-cell line `(i,55-i)`, occupation is `65280*i + 14080 + rotation`. Preserve the current rotation; do not assume the example's rotation of 1 applies to the actual marker. A first relative step should preserve the marker's existing `x+y`, without jumping to the full room diagonal. Check the intended neighbouring tile is usable before moving. Native altitude stays unchanged during this first horizontal test.
+Each changed frame updates the permanent `occupation` and `altitude` values, then signals `update_furni_id`. The controller will not write while global `astra_enabled` is zero, and it reads the selected `astra_observer` from the room. The current sample locations are Santiago and Greenwich; add or replace sites in the config to match the real observer. Time zones are only needed to label local time; the Sun's position uses UTC and longitude.
 
-## Observed API result
+Below the horizon, the first version holds the last position. It does not yet hide or park the Sun. Native height scale and night behavior need in-room calibration before leaving the room enabled for a full day.
 
-The read-only [inspection run](https://github.com/JuakongDF/Habbo_Planetarium/actions/runs/39291364351) found one variable in the Sun's profile and no occupation/altitude names in room definitions or the profile. Direct GETs for `@occupation` and `@altitude` returned `wired.variables.not_found`. No room values were changed. This establishes only that those names are not currently exposed on this binding; it does not rule out differently named aliases or an activation/refresh issue.
-
-The exact names/configuration of the two Echo boxes are the remaining input. If they expose native variables only to WIRED, the straightforward bridge is two separately named permanent furni variables, for example `target_occupation` and `target_altitude`, assigned to the Sun. WIRED would copy those commands into the corresponding native values. This removes the packed position/height decoder while retaining the API's ordinary permanent-variable interface. Do not make this substitution until the copy effects and target selection are verified.
-
-## Next test sequence
-
-1. Establish readable aliases or the permanent-variable bridge, and read the real initial occupation and altitude.
-2. Test one valid neighbouring diagonal cell at unchanged altitude and rotation; read back the resulting state.
-3. Restore the recorded occupation, provided the marker still has the test state. Do not overwrite a later manual change.
-4. Test a separately calibrated small altitude change and restore it.
-5. Only then connect repeated astronomical updates. Verify native height units and select the observer site; the current example is Santiago.
-
-A successful API update proves a stored value was accepted. Native readback and the visible room result are still needed to confirm actual movement. A command-variable readback alone does not establish that the WIRED copy ran.
+The workflow starts on a six-hour schedule and runs for at most 5 hours 45 minutes per hosted job. It also has a manual one-frame preview and a bounded live mode. Leave `astra_enabled=0` until the projected height and location have been reviewed. The monthly heartbeat writes a small timestamp log on the `automation-heartbeat` branch to keep scheduled workflows from going inactive.

@@ -1,3 +1,7 @@
+# Legacy packed-state prototype
+
+This guide describes the earlier `test1` packed-state design. The active room bridge has since been tested with permanent `occupation`/`altitude` variables and the global `update_furni_id` selector. See [the current bridge notes](NATIVE_CONTROL.md) and the scheduled controller in `scheduled_sun.py`. The old packed-state live writer is no longer exposed in GitHub Actions; this page is retained for its decoder and astronomy notes.
+
 # First real-time room test
 
 This prototype polls two room controls and sends current astronomical positions in a batch. It uses Skyfield + a local DE440s kernel, independently of the approximate browser simulator. No trajectory buffer or dummy memory furniture is required. Default execution is a local preview and performs no network calls. Only `--live` writes to Habbo; tests are bounded to 30 minutes maximum.
@@ -13,7 +17,7 @@ This prototype polls two room controls and sends current astronomical positions 
 - Missed frames are discarded. After a cooldown, controls are reread and positions recalculated at the current UTC time.
 - A read-only `--probe` for controls and existing furniture bindings.
 
-No authenticated request or in-room movement has been tested yet. The API request/response formats were checked against the public Habbo Swagger document on 15 October 2026. The room still needs its API configuration, variable definitions, bindings and WIRED consumer.
+At the time this earlier prototype was written, no authenticated write or in-room movement had been tested. The newer Echo bridge and visible one-tile motion test are documented in [Native control](NATIVE_CONTROL.md).
 
 ## Install and preview
 

@@ -26,6 +26,15 @@
     "horizon_height": 1000,
     "height_per_degree": 10
   },
+  "motion_bridge": {
+    "occupation_variable": "occupation",
+    "altitude_variable": "altitude",
+    "selector_variable": "update_furni_id",
+    "furni_in_game_id": 2147418112,
+    "screen_aspect_ratio": 1.1875,
+    "native_height_units_per_tile": 32,
+    "selector_settle_seconds": 0.2
+  },
   "bodies": [
     {
       "name": "sun",

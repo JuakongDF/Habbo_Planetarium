@@ -136,6 +136,23 @@ def project(altitude, azimuth, p):
                 height=height, visible=int(altitude >= 0))
 
 
+def project_screen_ellipse(altitude, azimuth, p, screen_aspect_ratio, native_height_units_per_tile):
+    """Project the Sun's direction onto a configurable screen-shaped ellipse."""
+    finite(altitude, -90, 90, "altitude")
+    finite(azimuth, 0, 360, "azimuth")
+    aspect = finite(screen_aspect_ratio, 0.5, 4, "screen_aspect_ratio")
+    units = finite(native_height_units_per_tile, 0.1, 100, "native_height_units_per_tile")
+    east = math.cos(math.radians(altitude)) * math.sin(math.radians(azimuth))
+    index = math.floor((p["room_size"]-1) * (1+east) / 2 + 0.5)
+    horizontal_radius_tiles = (p["room_size"]-1) / 2
+    vertical_radius_tiles = horizontal_radius_tiles / aspect
+    height = math.floor(p["horizon_height"] + vertical_radius_tiles * units *
+                        math.sin(math.radians(altitude)) + 0.5)
+    integer(height, 0, 2047, "projected height")
+    return dict(index=index, x=index, y=p["room_size"]-1-index,
+                height=height, visible=int(altitude >= 0))
+
+
 class Ephemeris:
     def __init__(self, path, config):
         from skyfield.api import load, load_file, wgs84
@@ -150,17 +167,21 @@ class Ephemeris:
         }
         self.config = config
 
-    def frame(self, observer_id, timestamp):
+    def apparent_altaz(self, observer_id, body_name, timestamp):
         instant = self.timescale.from_datetime(datetime.fromtimestamp(timestamp, timezone.utc))
         observer = self.observers[observer_id].at(instant)
+        alt, az, _ = observer.observe(self.kernel[body_name]).apparent().altaz()
+        return float(alt.degrees), float(az.degrees)
+
+    def frame(self, observer_id, timestamp):
         rows = []
         for body in self.config["bodies"]:
-            alt, az, _ = observer.observe(self.kernel[body["name"]]).apparent().altaz()
-            position = project(float(alt.degrees), float(az.degrees), self.config["projection"])
+            altitude, azimuth = self.apparent_altaz(observer_id, body["name"], timestamp)
+            position = project(altitude, azimuth, self.config["projection"])
             word = pack_state(position["index"], position["height"], position["visible"],
                               observer_id, int(timestamp))
             rows.append(dict(body=body["name"], furni_id=body["furni_id"], target_kind=body["target_kind"],
-                             altitude_degrees=float(alt.degrees), azimuth_degrees=float(az.degrees),
+                             altitude_degrees=altitude, azimuth_degrees=azimuth,
                              **position, value=str(word)))
         return rows
 
