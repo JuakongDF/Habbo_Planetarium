@@ -30,20 +30,22 @@
     "occupation_variable": "occupation",
     "altitude_variable": "altitude",
     "screen_aspect_ratio": 1.1875,
-    "screen_horizon_height": 4500,
+    "screen_horizon_height": 3500,
     "native_height_units_per_tile": 107.95
   },
   "moon": {
     "target_kind": "furni",
     "furni_id": 523624626,
     "state_variable": "state",
-    "full_moon_illumination_threshold": 0.5
+    "full_moon_illumination_threshold": 0.5,
+    "intrinsic_altitude_offset": 800
   },
   "bodies": [
     {
       "name": "sun",
       "target_kind": "furni-bc",
-      "furni_id": 0
+      "furni_id": 0,
+      "intrinsic_altitude_offset": 700
     }
   ]
 }

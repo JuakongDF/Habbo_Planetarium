@@ -10,7 +10,7 @@ The controller targets the Sun at API address `furni-bc/0`. It writes `altitude`
 
 ## Sun and Moon controller
 
-The scheduled controller uses Skyfield and a local JPL DE440s ephemeris. It calculates apparent topocentric positions for the Sun and Moon from UTC and the observer latitude/longitude selected in the room. Their east components map to the 56-cell west-east diagonal; altitude maps to the same screen-shaped ellipse with a provisional `19:16` ratio, horizon height `4500`, and estimated nadir/zenith values near `2000`/`7000`.
+The scheduled controller uses Skyfield and a local JPL DE440s ephemeris. It calculates apparent topocentric positions for the Sun and Moon from UTC and the observer latitude/longitude selected in the room. East and west map to the corrected ends of the 56-cell diagonal. Their visible heights span about `1000`–`6000`, with the horizon at `3500`; the Sun's command altitude subtracts its `700` intrinsic offset, and the Moon's subtracts its `800` offset. The `19:16` screen ratio and these offsets remain room-calibration values.
 
 The Moon uses the permanent furni variables `occupation`, `altitude`, and `state`. Assign them to furni `523624626` and Echo them to `@occupation`, `@altitude`, and `@state` in WIRED. Before any live writes, the controller checks that both the Sun and Moon have their required variables. It maps illumination of at least 50% to Moon state `0` and less than 50% to state `1`; the crescent rotation is `0` for waxing and `1` for waning in the Southern Hemisphere, reversed in the Northern Hemisphere. States `2` and `3` are not used. The 50% boundary is configurable in `controller/config.habbo-es.json`.
 

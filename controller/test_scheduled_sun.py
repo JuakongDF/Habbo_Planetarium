@@ -37,12 +37,12 @@ class DirectVariableWriteTests(unittest.TestCase):
         ])
 
     def test_projection_tracks_below_horizon_to_nadir(self):
-        projection = {"room_size": 56, "horizon_height": 4500}
+        projection = {"room_size": 56, "horizon_height": 3500}
         nadir = sun.project_screen_ellipse(-90, 180, projection, 19/16, 107.95)
         horizon = sun.project_screen_ellipse(0, 180, projection, 19/16, 107.95)
         zenith = sun.project_screen_ellipse(90, 180, projection, 19/16, 107.95)
         self.assertEqual((nadir["height"], horizon["height"], zenith["height"]),
-                         (2000, 4500, 7000))
+                         (1000, 3500, 6000))
         self.assertEqual((nadir["visible"], horizon["visible"], zenith["visible"]),
                          (1, 1, 1))
 
@@ -78,13 +78,48 @@ class DirectVariableWriteTests(unittest.TestCase):
             "motion_bridge": {"occupation_variable": "occupation",
                               "altitude_variable": "altitude",
                               "screen_aspect_ratio": 19/16,
-                              "screen_horizon_height": 4500,
+                              "screen_horizon_height": 3500,
                               "native_height_units_per_tile": 107.95},
         }
         frame = sun.moon_command_frame(FakeEphemeris(), config, 1, 123)
         self.assertEqual((frame["state"], frame["rotation"]), (1, 0))
         self.assertGreater(frame["height"], 0)
         self.assertEqual(frame["x"] + frame["y"], 55)
+
+    def test_east_and_west_map_to_correct_diagonal_ends(self):
+        projection = {"room_size": 56, "horizon_height": 3500}
+        east = sun.project_screen_ellipse(0, 90, projection, 19/16, 107.95)
+        west = sun.project_screen_ellipse(0, 270, projection, 19/16, 107.95)
+        self.assertEqual((east["index"], west["index"]), (0, 55))
+
+    def test_intrinsic_offsets_keep_visible_body_ranges_aligned(self):
+        class FakeEphemeris:
+            def apparent_altaz(self, observer, body, timestamp):
+                return self.altitude, 180
+
+        config = {
+            "bodies": [{"intrinsic_altitude_offset": 700}],
+            "projection": {"room_size": 56},
+            "motion_bridge": {"occupation_variable": "occupation",
+                              "altitude_variable": "altitude",
+                              "screen_aspect_ratio": 19/16,
+                              "screen_horizon_height": 3500,
+                              "native_height_units_per_tile": 107.95},
+        }
+        ephemeris = FakeEphemeris()
+        for altitude, expected in ((-90, 300), (0, 2800), (90, 5300)):
+            ephemeris.altitude = altitude
+            self.assertEqual(sun.command_frame(ephemeris, config, 1, 0, 0)["height"], expected)
+
+        config["moon"] = {"intrinsic_altitude_offset": 800,
+                          "full_moon_illumination_threshold": 0.5}
+        config["observers"] = {"1": {"latitude": -33.45}}
+        ephemeris.moon_phase = lambda observer, timestamp: {
+            "illumination": 0.6, "waxing": True, "elongation_degrees": 100
+        }
+        for altitude, expected in ((-90, 200), (0, 2700), (90, 5200)):
+            ephemeris.altitude = altitude
+            self.assertEqual(sun.moon_command_frame(ephemeris, config, 1, 0)["height"], expected)
 
     def test_moon_writer_updates_only_changed_fields(self):
         current = {"occupation": 986369, "altitude": 3958, "state": 0}

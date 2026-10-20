@@ -18,7 +18,7 @@ BRIDGE = {
     "occupation_variable": "occupation",
     "altitude_variable": "altitude",
     "screen_aspect_ratio": 19 / 16,
-    "screen_horizon_height": 4500,
+    "screen_horizon_height": 3500,
     "native_height_units_per_tile": 107.95,
 }
 
@@ -31,9 +31,11 @@ def command_frame(ephemeris, config, observer, timestamp, rotation):
     position = project_screen_ellipse(
         altitude, azimuth, projection,
         bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"])
+    height = position["height"] - config["bodies"][0].get("intrinsic_altitude_offset", 0)
+    integer(height, 0, 10000, "Sun command altitude")
     occupation = 65536 * position["x"] + 256 * position["y"] + rotation
     return {"altitude_degrees": altitude, "azimuth_degrees": azimuth,
-            "occupation": occupation, "height": position["height"],
+            "occupation": occupation, "height": height,
             "visible": position["visible"], "x": position["x"], "y": position["y"]}
 
 
@@ -68,9 +70,11 @@ def moon_command_frame(ephemeris, config, observer, timestamp):
     position = project_screen_ellipse(
         altitude, azimuth, projection,
         bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"])
+    height = position["height"] - moon_config.get("intrinsic_altitude_offset", 0)
+    integer(height, 0, 10000, "Moon command altitude")
     occupation = 65536 * position["x"] + 256 * position["y"] + display["rotation"]
     return {"altitude_degrees": altitude, "azimuth_degrees": azimuth,
-            "occupation": occupation, "height": position["height"],
+            "occupation": occupation, "height": height,
             "visible": position["visible"], "x": position["x"], "y": position["y"],
             "state": display["state"], "rotation": display["rotation"],
             "illumination": phase["illumination"], "waxing": phase["waxing"],
@@ -168,9 +172,13 @@ def run(config, client, ephemeris, duration):
     vertical_radius = ((config["projection"]["room_size"] - 1) /
                        (2 * bridge["screen_aspect_ratio"]) *
                        bridge["native_height_units_per_tile"])
-    if not 0 <= bridge["screen_horizon_height"] - vertical_radius and \
-            bridge["screen_horizon_height"] + vertical_radius <= 10000:
-        raise ConfigurationError("Projected heights must fit the supported 0…10000 range")
+    offsets = (config["bodies"][0].get("intrinsic_altitude_offset", 0),
+               moon_config.get("intrinsic_altitude_offset", 0))
+    for offset in offsets:
+        finite(offset, -10000, 10000, "intrinsic_altitude_offset")
+        if not (0 <= bridge["screen_horizon_height"] - vertical_radius - offset and
+                bridge["screen_horizon_height"] + vertical_radius - offset <= 10000):
+            raise ConfigurationError("Projected command altitudes must fit the supported 0…10000 range")
     deadline = time.monotonic() + duration
     next_poll = next_update = 0
     current_values = {bridge["occupation_variable"]: current_occupation,

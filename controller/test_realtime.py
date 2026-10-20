@@ -53,8 +53,8 @@ class CodecAndGeometryTests(unittest.TestCase):
 
     def test_cardinal_geometry_and_altitude(self):
         p = config()["projection"]
-        self.assertEqual(r.project(0, 90, p)["index"], 55)
-        self.assertEqual(r.project(0, 270, p)["index"], 0)
+        self.assertEqual(r.project(0, 90, p)["index"], 0)
+        self.assertEqual(r.project(0, 270, p)["index"], 55)
         self.assertEqual(r.project(90, 0, p)["height"], 1900)
         self.assertEqual(r.project(-90, 0, p)["height"], 100)
         for az in range(361):

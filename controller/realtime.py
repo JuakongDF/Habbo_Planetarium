@@ -130,7 +130,8 @@ def project(altitude, azimuth, p):
     finite(azimuth, 0, 360, "azimuth")
     # Orthographic east component; northern/southern directions overlap.
     east = math.cos(math.radians(altitude)) * math.sin(math.radians(azimuth))
-    index = math.floor((p["room_size"]-1) * (1+east) / 2 + 0.5)
+    # In this room, increasing the diagonal index points west, so invert east.
+    index = math.floor((p["room_size"]-1) * (1-east) / 2 + 0.5)
     height = math.floor(p["horizon_height"] + p["height_per_degree"]*altitude + 0.5)
     return dict(index=index, x=index, y=p["room_size"]-1-index,
                 height=height, visible=int(altitude >= 0))
@@ -156,7 +157,8 @@ def project_screen_ellipse(altitude, azimuth, p, screen_aspect_ratio, native_hei
     aspect = finite(screen_aspect_ratio, 0.5, 4, "screen_aspect_ratio")
     units = finite(native_height_units_per_tile, 0.1, 200, "native_height_units_per_tile")
     east = math.cos(math.radians(altitude)) * math.sin(math.radians(azimuth))
-    index = math.floor((p["room_size"]-1) * (1+east) / 2 + 0.5)
+    # The room's west-east diagonal runs opposite the astronomical east component.
+    index = math.floor((p["room_size"]-1) * (1-east) / 2 + 0.5)
     horizontal_radius_tiles = (p["room_size"]-1) / 2
     vertical_radius_tiles = horizontal_radius_tiles / aspect
     height = math.floor(p["horizon_height"] + vertical_radius_tiles * units *
