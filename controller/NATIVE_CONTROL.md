@@ -28,4 +28,4 @@ Each changed frame updates `altitude` when its value changes and updates `occupa
 
 Below the horizon, the first version holds the last position. It does not yet hide or park the Sun. Native height scale and night behavior need in-room calibration before leaving the room enabled for a full day.
 
-The workflow starts on a six-hour schedule and runs for at most 5 hours 45 minutes per hosted job. It also has a manual one-frame preview and a bounded live mode. The monthly heartbeat writes a small timestamp log on the `automation-heartbeat` branch to keep scheduled workflows from going inactive.
+The workflow starts on a six-hour schedule and runs for up to 5 hours 55 minutes per hosted job, leaving about five minutes for a handoff. Scheduled starts can still be delayed. It also has a manual one-frame preview and a bounded live mode. The monthly heartbeat writes a small timestamp log on the `automation-heartbeat` branch to keep scheduled workflows from going inactive.

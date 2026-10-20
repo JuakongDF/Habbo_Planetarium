@@ -162,7 +162,7 @@ def main():
     args = parser.parse_args()
     try:
         config = validate_config(json.loads(args.config.read_text()), live=not args.preview)
-        finite(args.duration, 1, 5*60*60+45*60, "duration")
+        finite(args.duration, 1, 5*60*60+55*60, "duration")
         ephemeris = Ephemeris(args.ephemeris, config)
         if args.preview:
             bridge = config.get("motion_bridge", BRIDGE)

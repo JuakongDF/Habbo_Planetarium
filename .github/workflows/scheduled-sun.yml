@@ -47,7 +47,7 @@ jobs:
         env:
           HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
           HABBO_WRITE_KEY: ${{ secrets.HABBO_WRITE_KEY }}
-        run: python controller/scheduled_sun.py --ephemeris "$RUNNER_TEMP/de440s.bsp" --duration 20700
+        run: python controller/scheduled_sun.py --ephemeris "$RUNNER_TEMP/de440s.bsp" --duration 21300
       - name: Preview one current position
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'preview'
         env:
