@@ -1,6 +1,6 @@
 # Legacy packed-state prototype
 
-This guide describes the earlier `test1` packed-state design. The active room bridge has since been tested with permanent `occupation`/`altitude` variables and the global `update_furni_id` selector. See [the current bridge notes](NATIVE_CONTROL.md) and the scheduled controller in `scheduled_sun.py`. The old packed-state live writer is no longer exposed in GitHub Actions; this page is retained for its decoder and astronomy notes.
+This guide describes the earlier `test1` packed-state design. The active room bridge uses permanent `occupation`/`altitude` furniture variables and direct WIRED change detection. See [the current bridge notes](NATIVE_CONTROL.md) and the scheduled controller in `scheduled_sun.py`. The old packed-state live writer is no longer exposed in GitHub Actions; this page is retained for its decoder and astronomy notes.
 
 # First real-time room test
 

@@ -2,15 +2,6 @@ name: One-tile WIRED motion test
 
 on:
   workflow_dispatch:
-    inputs:
-      action:
-        description: Run a one-tile test or clear this test's stuck selector
-        type: choice
-        required: true
-        default: test
-        options:
-          - test
-          - reset-selector
 
 permissions:
   contents: read
@@ -30,15 +21,8 @@ jobs:
           persist-credentials: false
       - name: Run controller tests
         run: python3 -m unittest discover -s controller -p 'test_*.py' -v
-      - name: Send one diagonal motion command
-        if: inputs.action == 'test'
+      - name: Change occupation directly (no selector)
         env:
           HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
           HABBO_WRITE_KEY: ${{ secrets.HABBO_WRITE_KEY }}
         run: python3 controller/motion_api_test.py
-      - name: Clear selector left by this test
-        if: inputs.action == 'reset-selector'
-        env:
-          HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
-          HABBO_WRITE_KEY: ${{ secrets.HABBO_WRITE_KEY }}
-        run: python3 controller/motion_api_test.py --reset-selector

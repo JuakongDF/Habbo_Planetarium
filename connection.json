@@ -6,5 +6,5 @@
   "candidates": [
     {"target_kind": "furni-bc", "entity_id": 0}
   ],
-  "controls": ["astra_enabled", "astra_observer", "update_furni_id"]
+  "controls": ["astra_enabled", "astra_observer"]
 }

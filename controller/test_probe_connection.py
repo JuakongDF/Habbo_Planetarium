@@ -30,7 +30,7 @@ class ProbeTests(unittest.TestCase):
         self.assertTrue(result["unique_binding"])
         self.assertFalse(result["ready_for_controller"])
         self.assertTrue(result["candidates"][1]["found"])
-        self.assertEqual(len(requests), 5)
+        self.assertEqual(len(requests), 4)
         self.assertTrue(all(method == "GET" for method, _ in requests))
         self.assertNotIn("9223372036854775807", json.dumps(result))
 

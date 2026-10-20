@@ -29,12 +29,9 @@
   "motion_bridge": {
     "occupation_variable": "occupation",
     "altitude_variable": "altitude",
-    "selector_variable": "update_furni_id",
-    "furni_in_game_id": 2147418112,
     "screen_aspect_ratio": 1.1875,
     "screen_horizon_height": 4500,
-    "native_height_units_per_tile": 107.95,
-    "selector_settle_seconds": 0.2
+    "native_height_units_per_tile": 107.95
   },
   "bodies": [
     {

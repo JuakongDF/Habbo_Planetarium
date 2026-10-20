@@ -1,4 +1,4 @@
-"""Scheduled Sun controller using permanent WIRED commands and a selector pulse."""
+"""Scheduled Sun controller using permanent WIRED furniture variables."""
 import argparse
 from datetime import datetime, timezone
 import json
@@ -16,20 +16,10 @@ from realtime import (ApiError, ConfigurationError, Ephemeris, HabboClient,
 BRIDGE = {
     "occupation_variable": "occupation",
     "altitude_variable": "altitude",
-    "selector_variable": "update_furni_id",
-    "furni_in_game_id": 2147418112,
     "screen_aspect_ratio": 19 / 16,
     "screen_horizon_height": 4500,
     "native_height_units_per_tile": 107.95,
-    "selector_settle_seconds": 0.2,
 }
-
-
-def read_int(client, path, label, minimum=-(2**63), maximum=2**63-1):
-    response = client.request("GET", path)
-    if not isinstance(response, dict) or "value" not in response:
-        raise ApiError("Malformed " + label + " response")
-    return integer(response["value"], minimum, maximum, label)
 
 
 def command_frame(ephemeris, config, observer, timestamp, rotation):
@@ -52,8 +42,7 @@ def definitions_and_profile(client, config):
         raise ApiError("Malformed variable definitions")
     bridge = config.get("motion_bridge", BRIDGE)
     for scope, name in (("furni", bridge["occupation_variable"]),
-                        ("furni", bridge["altitude_variable"]),
-                        ("global", bridge["selector_variable"])):
+                        ("furni", bridge["altitude_variable"])):
         names = definitions.get(scope)
         if not isinstance(names, list) or name not in names:
             raise ConfigurationError("Missing WIRED variable definition: " + scope + "/" + name)
@@ -71,40 +60,24 @@ def definitions_and_profile(client, config):
     x, y, rotation = occupation // 65536, (occupation // 256) % 256, occupation % 256
     if x > 55 or y > 55:
         raise ConfigurationError("Sun's current occupation is outside the 56-cell room")
-    return bridge, target, rotation
+    return bridge, target, rotation, occupation, altitude
 
 
-def write_command(client, target, bridge, frame, current_selector):
-    selector_path = "/global/" + quote(bridge["selector_variable"], safe="")
-    if current_selector != 0:
-        raise ConfigurationError("Selector is not zero; refusing to overlap motion commands")
+def write_command(client, target, bridge, frame, current_values):
     occ_name, alt_name = bridge["occupation_variable"], bridge["altitude_variable"]
-    for name, value in ((occ_name, frame["occupation"]), (alt_name, frame["height"])):
+    written = []
+    # Update altitude first; the final occupation change then exposes the complete frame.
+    for name, value in ((alt_name, frame["height"]), (occ_name, frame["occupation"])):
+        if current_values[name] == value:
+            continue
         response = client.request("PATCH", f"/furni/{quote(name, safe='')}/{target}",
                                   {"value": str(value)})
         if not isinstance(response, dict) or integer(response.get("value"), -(2**63),
                                                        2**63-1, name) != value:
             raise ApiError(name + " command did not read back as requested")
-
-    target_id = bridge["furni_in_game_id"]
-    response = client.request("PATCH", selector_path, {"value": str(target_id)})
-    if not isinstance(response, dict) or integer(response.get("value"), 0, 2**63-1,
-                                                  "selector") != target_id:
-        raise ApiError("Selector trigger did not read back as requested")
-
-    time.sleep(bridge["selector_settle_seconds"])
-    selector = read_int(client, selector_path, "selector", 0, 2**63-1)
-    if selector == target_id:
-        reset = client.request("PATCH", selector_path, {"value": "0"})
-        if not isinstance(reset, dict) or integer(reset.get("value"), 0, 2**63-1,
-                                                   "selector reset") != 0:
-            raise ApiError("Could not clear selector after motion command")
-        reset_mode = "controller_reset"
-    elif selector == 0:
-        reset_mode = "wired_reset"
-    else:
-        raise ConfigurationError("Selector changed unexpectedly during motion command")
-    return reset_mode
+        current_values[name] = value
+        written.append(name)
+    return written
 
 
 def run(config, client, ephemeris, duration):
@@ -112,11 +85,10 @@ def run(config, client, ephemeris, duration):
     if not enabled:
         log("room_disabled", observer=observer, writes_performed=False)
         return
-    bridge, target, rotation = definitions_and_profile(client, config)
+    bridge, target, rotation, current_occupation, current_altitude = definitions_and_profile(client, config)
     for key, low, high in (("screen_aspect_ratio", 0.5, 4),
                            ("screen_horizon_height", 0, 10000),
-                           ("native_height_units_per_tile", 0.1, 200),
-                           ("selector_settle_seconds", 0.05, 2)):
+                           ("native_height_units_per_tile", 0.1, 200)):
         finite(bridge[key], low, high, key)
     vertical_radius = ((config["projection"]["room_size"] - 1) /
                        (2 * bridge["screen_aspect_ratio"]) *
@@ -126,7 +98,9 @@ def run(config, client, ephemeris, duration):
         raise ConfigurationError("Projected heights must fit the supported 0…10000 range")
     deadline = time.monotonic() + duration
     next_poll = next_update = 0
-    last_frame = None
+    current_values = {bridge["occupation_variable"]: current_occupation,
+                      bridge["altitude_variable"]: current_altitude}
+    last_frame = (current_occupation, current_altitude)
     failures = 0
     last_night_log = None
     while time.monotonic() < deadline:
@@ -150,16 +124,14 @@ def run(config, client, ephemeris, duration):
                             action="holding_last_position")
                         last_night_log = night_key
                 elif last_frame != (frame["occupation"], frame["height"]):
-                    selector_path = "/global/" + quote(bridge["selector_variable"], safe="")
-                    selector = read_int(client, selector_path, "selector", 0, 2**63-1)
-                    reset_mode = write_command(client, target, bridge, frame, selector)
+                    written = write_command(client, target, bridge, frame, current_values)
                     log("sun_command", utc=datetime.fromtimestamp(
                         sampled_at, timezone.utc).isoformat(), observer=observer,
                         altitude_degrees=round(frame["altitude_degrees"], 4),
                         azimuth_degrees=round(frame["azimuth_degrees"], 4),
                         x=frame["x"], y=frame["y"], occupation=frame["occupation"],
                         height=frame["height"], screen_aspect_ratio=bridge["screen_aspect_ratio"],
-                        selector_reset=reset_mode)
+                        variables_written=written)
                     last_frame = (frame["occupation"], frame["height"])
                     last_night_log = None
                     failures = 0
