@@ -24,7 +24,7 @@ Direct reads of `@occupation` and `@altitude` still return `wired.variables.not_
 
 ## Scheduled Sun projection
 
-`scheduled_sun.py` calculates the current apparent topocentric Sun position from UTC and the selected observer's latitude/longitude. It projects the eastward component onto the 56-cell west-east diagonal and maps altitude onto a configurable screen-shaped ellipse. The starting screen ratio is `19:16`; vertical scale is `32` native height units per tile-equivalent, centered at `1000`. These are calibration values, not measured Habbo screen geometry. They are in `controller/config.habbo-es.json` under `motion_bridge`.
+`scheduled_sun.py` calculates the current apparent topocentric Sun position from UTC and the selected observer's latitude/longitude. It projects the eastward component onto the 56-cell west-east diagonal and maps altitude onto a configurable screen-shaped ellipse. The provisional screen ratio is `19:16`; following the user's estimate, the active projection uses a horizon height of `4500` and a vertical radius of about `2500`, giving nadir/zenith values near `2000`/`7000`. These are calibration estimates, not yet visually confirmed. They are in `controller/config.habbo-es.json` under `motion_bridge`.
 
 Each changed frame updates the permanent `occupation` and `altitude` values, then signals `update_furni_id`. The controller will not write while global `astra_enabled` is zero, and it reads the selected `astra_observer` from the room. The current sample locations are Santiago and Greenwich; add or replace sites in the config to match the real observer. Time zones are only needed to label local time; the Sun's position uses UTC and longitude.
 

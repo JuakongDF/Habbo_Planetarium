@@ -141,14 +141,14 @@ def project_screen_ellipse(altitude, azimuth, p, screen_aspect_ratio, native_hei
     finite(altitude, -90, 90, "altitude")
     finite(azimuth, 0, 360, "azimuth")
     aspect = finite(screen_aspect_ratio, 0.5, 4, "screen_aspect_ratio")
-    units = finite(native_height_units_per_tile, 0.1, 100, "native_height_units_per_tile")
+    units = finite(native_height_units_per_tile, 0.1, 200, "native_height_units_per_tile")
     east = math.cos(math.radians(altitude)) * math.sin(math.radians(azimuth))
     index = math.floor((p["room_size"]-1) * (1+east) / 2 + 0.5)
     horizontal_radius_tiles = (p["room_size"]-1) / 2
     vertical_radius_tiles = horizontal_radius_tiles / aspect
     height = math.floor(p["horizon_height"] + vertical_radius_tiles * units *
                         math.sin(math.radians(altitude)) + 0.5)
-    integer(height, 0, 2047, "projected height")
+    integer(height, 0, 10000, "projected height")
     return dict(index=index, x=index, y=p["room_size"]-1-index,
                 height=height, visible=int(altitude >= 0))
 

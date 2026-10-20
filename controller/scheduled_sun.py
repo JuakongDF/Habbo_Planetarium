@@ -19,7 +19,8 @@ BRIDGE = {
     "selector_variable": "update_furni_id",
     "furni_in_game_id": 2147418112,
     "screen_aspect_ratio": 19 / 16,
-    "native_height_units_per_tile": 32,
+    "screen_horizon_height": 4500,
+    "native_height_units_per_tile": 107.95,
     "selector_settle_seconds": 0.2,
 }
 
@@ -33,9 +34,12 @@ def read_int(client, path, label, minimum=-(2**63), maximum=2**63-1):
 
 def command_frame(ephemeris, config, observer, timestamp, rotation):
     altitude, azimuth = ephemeris.apparent_altaz(observer, "sun", timestamp)
+    bridge = config.get("motion_bridge", BRIDGE)
+    projection = {**config["projection"],
+                  "horizon_height": bridge["screen_horizon_height"]}
     position = project_screen_ellipse(
-        altitude, azimuth, config["projection"],
-        BRIDGE["screen_aspect_ratio"], BRIDGE["native_height_units_per_tile"])
+        altitude, azimuth, projection,
+        bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"])
     occupation = 65536 * position["x"] + 256 * position["y"] + rotation
     return {"altitude_degrees": altitude, "azimuth_degrees": azimuth,
             "occupation": occupation, "height": position["height"],
@@ -63,7 +67,7 @@ def definitions_and_profile(client, config):
     if not isinstance(variables, dict) or not set(required).issubset(variables):
         raise ConfigurationError("Assign both permanent motion variables to the Sun")
     occupation = integer(variables[required[0]].get("value"), 0, 2**63-1, "occupation")
-    altitude = integer(variables[required[1]].get("value"), 0, 2047, "altitude")
+    altitude = integer(variables[required[1]].get("value"), 0, 10000, "altitude")
     x, y, rotation = occupation // 65536, (occupation // 256) % 256, occupation % 256
     if x > 55 or y > 55:
         raise ConfigurationError("Sun's current occupation is outside the 56-cell room")
@@ -110,9 +114,16 @@ def run(config, client, ephemeris, duration):
         return
     bridge, target, rotation = definitions_and_profile(client, config)
     for key, low, high in (("screen_aspect_ratio", 0.5, 4),
-                           ("native_height_units_per_tile", 0.1, 100),
+                           ("screen_horizon_height", 0, 10000),
+                           ("native_height_units_per_tile", 0.1, 200),
                            ("selector_settle_seconds", 0.05, 2)):
         finite(bridge[key], low, high, key)
+    vertical_radius = ((config["projection"]["room_size"] - 1) /
+                       (2 * bridge["screen_aspect_ratio"]) *
+                       bridge["native_height_units_per_tile"])
+    if not 0 <= bridge["screen_horizon_height"] - vertical_radius and \
+            bridge["screen_horizon_height"] + vertical_radius <= 10000:
+        raise ConfigurationError("Projected heights must fit the supported 0…10000 range")
     deadline = time.monotonic() + duration
     next_poll = next_update = 0
     last_frame = None

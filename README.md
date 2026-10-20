@@ -10,7 +10,7 @@ The controller writes `occupation`, writes `altitude`, and sends the Sun's in-ga
 
 ## Sun controller
 
-The scheduled controller uses Skyfield and a local JPL DE440s ephemeris. It calculates the Sun's apparent topocentric position from UTC and the observer latitude/longitude selected in the room. The east component maps to the 56-cell west-east diagonal. Altitude maps to a screen-shaped ellipse with a configurable starting ratio of `19:16`; native vertical scale is also configurable and still needs room calibration.
+The scheduled controller uses Skyfield and a local JPL DE440s ephemeris. It calculates the Sun's apparent topocentric position from UTC and the observer latitude/longitude selected in the room. The east component maps to the 56-cell west-east diagonal. Altitude maps to a screen-shaped ellipse with a provisional `19:16` ratio, horizon height `4500`, and estimated nadir/zenith values near `2000`/`7000`; calibrate them in-room before relying on the mapping.
 
 The scheduled job starts every six hours, runs for at most 5 hours 45 minutes, and stops publishing whenever global `astra_enabled` is zero. The last room check found `astra_enabled=0`, so the scheduler currently starts safely disabled. That check also found the `update_furni_id` global missing from the API after selector cleanup; confirm that this permanent writable global is available before enabling motion. The manual **Scheduled Sun controller** workflow defaults to a read-only preview; its bounded live mode obeys the same room enable switch. The current observer table contains Santiago and Greenwich examples. Update it with the intended latitude/longitude before relying on the projection for a specific location.
 
