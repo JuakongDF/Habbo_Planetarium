@@ -1,0 +1,28 @@
+name: One-tile WIRED motion test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: habbo-room-126070270
+  cancel-in-progress: false
+
+jobs:
+  motion-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Run controller tests
+        run: python3 -m unittest discover -s controller -p 'test_*.py' -v
+      - name: Send one diagonal motion command
+        env:
+          HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
+          HABBO_WRITE_KEY: ${{ secrets.HABBO_WRITE_KEY }}
+        run: python3 controller/motion_api_test.py
