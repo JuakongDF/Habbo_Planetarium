@@ -16,7 +16,7 @@ occupation = 65536*x + 256*y + rotation
 
 So a flat step `(x+1,y-1)` changes occupation by `65280` and preserves rotation. The earlier test established that this command moves the Sun when the selector chain is used. The current direct-variable design is being checked separately by the updated one-tile workflow.
 
-The earlier selector-based test left the permanent occupation at `(37,17,0)`; the user confirmed the physical motion. Selector cleanup history is no longer relevant to the scheduled controller.
+The earlier selector-based test left permanent occupation at `(37,17,0)`; the user confirmed that physical motion. The new [direct-variable test run](https://github.com/JuakongDF/Habbo_Planetarium/actions/runs/39354511068) successfully wrote the next tile `(38,16,0)` without any selector read or write. The API accepted the direct write; visual confirmation of the new WIRED event path is still useful.
 
 Direct reads of `@occupation` and `@altitude` still return `wired.variables.not_found`. Their Echo values are not separate API bindings; they are the WIRED bridge into the internal furni state.
 

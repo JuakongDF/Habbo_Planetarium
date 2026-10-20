@@ -6,7 +6,7 @@ Real-time astronomical room prototype for [Habbo.es room 126070270](https://www.
 
 The Sun has permanent furniture variables `occupation` and `altitude`. The Echo boxes link those API-visible variables to internal `@occupation` and `@altitude`. A one-tile live test moved the Sun from `(36,18)` to `(37,17)` along the west-east diagonal; that historical test used a selector, but the current design writes the furniture variables directly and relies on WIRED detecting the changed furni. [Earlier motion test](https://github.com/JuakongDF/Habbo_Planetarium/actions/runs/39349603144)
 
-The controller targets the Sun at API address `furni-bc/0`. It writes `altitude` first and writes `occupation` only when the projected tile changes. No global selector is required. A direct-occupation one-tile workflow is available to verify this event path in-room.
+The controller targets the Sun at API address `furni-bc/0`. It writes `altitude` first and writes `occupation` only when the projected tile changes. No global selector is required. The direct-variable test run [successfully wrote occupation from `(37,17,0)` to `(38,16,0)`](https://github.com/JuakongDF/Habbo_Planetarium/actions/runs/39354511068); the API accepted the write, and the resulting in-room movement is the visual confirmation step.
 
 ## Sun controller
 
