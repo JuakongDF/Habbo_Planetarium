@@ -58,4 +58,11 @@ jobs:
         env:
           HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
           HABBO_WRITE_KEY: ${{ secrets.HABBO_WRITE_KEY }}
-        run: python controller/scheduled_sun.py --ephemeris "$RUNNER_TEMP/de440s.bsp" --duration "${{ inputs.duration_minutes * 60 }}"
+          DURATION_MINUTES: ${{ inputs.duration_minutes }}
+        run: |
+          if ! [[ "$DURATION_MINUTES" =~ ^[0-9]+$ ]]; then
+            echo "duration_minutes must be an integer" >&2
+            exit 1
+          fi
+          duration_seconds=$((DURATION_MINUTES * 60))
+          python controller/scheduled_sun.py --ephemeris "$RUNNER_TEMP/de440s.bsp" --duration "$duration_seconds"
