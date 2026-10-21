@@ -53,12 +53,12 @@
     {"name": "aries", "furni_id": 1424371933, "ra_degrees": 37.5, "dec_degrees": 20},
     {"name": "libra", "furni_id": 1424298371, "ra_degrees": 225, "dec_degrees": -15},
     {"name": "tauro", "furni_id": 1289178599, "ra_degrees": 67.5, "dec_degrees": 17},
-    {"name": "sagitario", "furni_id": 1430121204, "ra_degrees": 285, "dec_degrees": -25},
+    {"name": "sagitario", "furni_id": 1430121204, "follow": "centro_galaxia", "relative_altitude": 1000},
     {"name": "escorpio", "furni_id": 1289243336, "ra_degrees": 247.5, "dec_degrees": -30},
     {"name": "geminis", "furni_id": 1424599474, "ra_degrees": 105, "dec_degrees": 22},
     {"name": "cancer", "furni_id": 1288578525, "ra_degrees": 127.5, "dec_degrees": 20},
     {"name": "centro_galaxia", "furni_id": 1241761742, "ra_degrees": 266.4168,
-      "dec_degrees": -29.0078, "intrinsic_altitude_offset": 500}
+      "dec_degrees": -29.0078, "intrinsic_altitude_offset": 1000}
   ],
   "bodies": [
     {

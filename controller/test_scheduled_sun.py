@@ -138,7 +138,7 @@ class DirectVariableWriteTests(unittest.TestCase):
     def test_moon_writer_updates_only_changed_fields(self):
         current = {"occupation": 986369, "altitude": 3958, "state": 0}
         frame = {"occupation": 986369, "height": 3958, "state": 1}
-        written = sun.write_moon_command(self.client, "furni/523624626", self.bridge,
+        written = sun.write_display_command(self.client, "furni/523624626", self.bridge,
                                          "state", frame, current)
         self.assertEqual(written, ["state"])
         self.assertEqual(self.client.requests, [
@@ -193,6 +193,67 @@ class DirectVariableWriteTests(unittest.TestCase):
         self.assertEqual(profiles[0]["values"],
                          {"occupation": 986371, "altitude": 3500, "state": 1})
 
+    def test_sagittarius_follows_galaxy_at_extremes_and_after_leaving_corners(self):
+        import json
+        from pathlib import Path
+        config = json.loads(Path(__file__).with_name("config.habbo-es.json").read_text())
+        items = {item["name"]: item for item in sun.validate_constellations(config, live=True)}
+
+        class Ephemeris:
+            def fixed_star_altaz(self, observer, ra, dec, timestamp):
+                self.requested = (ra, dec)
+                return self.altitude, self.azimuth
+
+        ephemeris = Ephemeris()
+        for altitude, azimuth in ((-90, 90), (0, 90), (30, 90),
+                                   (90, 270), (0, 270), (30, 270)):
+            with self.subTest(altitude=altitude, azimuth=azimuth):
+                ephemeris.altitude, ephemeris.azimuth = altitude, azimuth
+                galaxy = sun.constellation_command_frame(
+                    ephemeris, config, items["centro_galaxia"], 1, 123, 0)
+                sag = sun.constellation_command_frame(
+                    ephemeris, config, items["sagitario"], 1, 123, 3)
+                self.assertEqual(ephemeris.requested, (266.4168, -29.0078))
+                self.assertEqual((sag["x"], sag["y"]), (galaxy["x"], galaxy["y"]))
+                self.assertEqual(sag["height"] - galaxy["height"], 1000)
+                self.assertEqual(sag["state"], 0)
+                self.assertEqual(sag["rotation"], 3)
+                self.assertTrue(0 <= galaxy["height"] <= 5000)
+                self.assertTrue(1000 <= sag["height"] <= 6000)
+                if altitude == 0:
+                    self.assertEqual(sag["x"], 54 if azimuth == 90 else 1)
+                elif altitude == 30:
+                    self.assertTrue(1 < sag["x"] < 54)
+
+    def test_fixed_sky_links_reject_missing_sources_and_cycles(self):
+        import json
+        from pathlib import Path
+        for source in ("missing", "sagitario", 123):
+            config = json.loads(Path(__file__).with_name("config.habbo-es.json").read_text())
+            sag = next(item for item in config["constellations"] if item["name"] == "sagitario")
+            sag["follow"] = source
+            with self.subTest(source=source), self.assertRaises(sun.ConfigurationError):
+                sun.validate_constellations(config, live=True)
+
+    def test_fixed_sky_state_is_reset_without_moving_and_failed_position_is_retried(self):
+        current = {"occupation": 54*65536, "altitude": 3500, "state": 2}
+        frame = {"occupation": 54*65536, "height": 3500, "state": 0}
+        written = sun.write_display_command(self.client, "furni/1430121204", self.bridge,
+                                            "state", frame, current)
+        self.assertEqual(written, ["state"])
+        self.assertEqual(current["state"], 0)
+        # An API rejection must not enter the cache as a successful move.
+        frame["occupation"] = 53*65536 + 256
+        with patch.object(self.client, "request", side_effect=sun.ApiError("rejected")):
+            with self.assertRaises(sun.ApiError):
+                sun.write_display_command(self.client, "furni/1430121204", self.bridge,
+                                          "state", frame, current)
+        self.assertEqual(current["occupation"], 54*65536)
+        written = sun.write_display_command(self.client, "furni/1430121204", self.bridge,
+                                            "state", frame, current)
+        self.assertEqual(written, ["occupation"])
+        self.assertEqual(current["occupation"], frame["occupation"])
+
     def test_config_contains_all_requested_fixed_sky_targets_and_galaxy_offset(self):
         import json
         from pathlib import Path
@@ -205,7 +266,7 @@ class DirectVariableWriteTests(unittest.TestCase):
             1424599474, 1288578525, 1241761742,
         })
         galaxy = next(item for item in targets if item["furni_id"] == 1241761742)
-        self.assertEqual(galaxy["intrinsic_altitude_offset"], 500)
+        self.assertEqual(galaxy["intrinsic_altitude_offset"], 1000)
 
     def test_update_request_refresh_builds_chunked_batches_for_every_sky_furni(self):
         import json
@@ -237,11 +298,14 @@ class DirectVariableWriteTests(unittest.TestCase):
             bridge, "furni-bc/0", 0, "furni/523624626", fixed_sky, planets)
 
         self.assertEqual([job["variable"] for job in jobs],
-                         ["state", "altitude", "altitude", "occupation", "occupation"])
-        self.assertEqual([len(job["rows"]) for job in jobs], [1, 10, 6, 10, 6])
+                         ["state", "state", "altitude", "altitude", "occupation", "occupation"])
+        self.assertEqual([len(job["rows"]) for job in jobs], [10, 4, 10, 6, 10, 6])
         self.assertEqual(len(frames), 16)
-        self.assertEqual(sum(len(job["rows"]) for job in jobs), 33)
-        self.assertEqual([row["target"] for row in jobs[0]["rows"]], ["furni/523624626"])
+        self.assertEqual(sum(len(job["rows"]) for job in jobs), 46)
+        state_rows = [row for job in jobs if job["variable"] == "state" for row in job["rows"]]
+        self.assertEqual({row["target"] for row in state_rows},
+                         {"furni/523624626"} | {profile["target"] for profile in fixed_sky})
+        self.assertTrue(all(row["value"] == "0" for row in state_rows))
         saturn_rows = [(job["variable"], row) for job in jobs for row in job["rows"]
                        if row["target"] == "furni/165326448"]
         self.assertEqual([variable for variable, _ in saturn_rows], ["altitude", "occupation"])
@@ -278,12 +342,15 @@ class DirectVariableWriteTests(unittest.TestCase):
             with self.subTest(update_request=request):
                 config = sun.validate_config(json.loads(
                     Path(__file__).with_name("config.habbo-es.json").read_text()), live=True)
-                config["constellations"] = []
+                sun.validate_constellations(config, live=True)
                 sun.validate_planets(config)
                 now = [0.0]
 
                 class Ephemeris:
                     def apparent_altaz(self, observer, body, timestamp):
+                        return -20 + timestamp / 60, 90
+
+                    def fixed_star_altaz(self, observer, ra, dec, timestamp):
                         return -20 + timestamp / 60, 90
 
                     def moon_phase(self, observer, timestamp):
@@ -296,7 +363,8 @@ class DirectVariableWriteTests(unittest.TestCase):
                         self.values = {target: {"occupation": 65536 + 256*53 + 3,
                                                "altitude": 3500, "state": 2}
                                        for target in ("furni-bc/0", "furni/523624626",
-                                                      "furni/165326448")}
+                                                      "furni/165326448",
+                                                      *(f"furni/{item['furni_id']}" for item in config["constellations"]))}
 
                     def controls_with_update_request(self):
                         return True, 1, self.flag
@@ -333,6 +401,12 @@ class DirectVariableWriteTests(unittest.TestCase):
                 self.assertTrue(any(call.args[0] == "planet_frame" for call in logger.call_args_list))
                 self.assertEqual(client.values["furni/165326448"]["state"], 2)
                 self.assertEqual(client.values["furni/165326448"]["occupation"] % 256, 3)
+                for item in config["constellations"]:
+                    self.assertEqual(client.values[f"furni/{item['furni_id']}"]["state"], 0)
+                sag = client.values["furni/1430121204"]
+                galaxy = client.values["furni/1241761742"]
+                self.assertEqual(sag["altitude"] - galaxy["altitude"], 1000)
+                self.assertEqual(sag["occupation"], galaxy["occupation"])
                 self.assertEqual(client.clears, request)
                 saturn_batches = [variable for variable, rows in client.batches
                                   if any(row["target"] == "furni/165326448" for row in rows)]

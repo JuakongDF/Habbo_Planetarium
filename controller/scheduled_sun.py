@@ -111,24 +111,35 @@ def moon_command_frame(ephemeris, config, observer, timestamp):
             "elongation_degrees": phase["elongation_degrees"]}
 
 
+def fixed_sky_anchor(config, item):
+    """Resolve a linked furni to its celestial anchor and effective sprite offset."""
+    if "follow" in item:
+        source = next(source for source in config["constellations"]
+                      if source["name"] == item["follow"])
+        return source, (source.get("intrinsic_altitude_offset", 0)
+                        - item["relative_altitude"])
+    return item, item.get("intrinsic_altitude_offset", 0)
+
+
 def constellation_command_frame(ephemeris, config, constellation, observer, timestamp,
                                 rotation):
     """Project a fixed celestial anchor; only its local horizon position changes."""
+    anchor, offset = fixed_sky_anchor(config, constellation)
     altitude, azimuth = ephemeris.fixed_star_altaz(
-        observer, constellation["ra_degrees"], constellation["dec_degrees"], timestamp)
+        observer, anchor["ra_degrees"], anchor["dec_degrees"], timestamp)
     bridge = config.get("motion_bridge", BRIDGE)
     projection = {**config["projection"],
                   "horizon_height": bridge["screen_horizon_height"]}
     position = project_screen_ellipse(
         altitude, azimuth, projection,
         bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"])
-    height = position["height"] - constellation.get("intrinsic_altitude_offset", 0)
+    height = position["height"] - offset
     integer(height, 0, 10000, constellation["name"] + " command altitude")
     occupation = 65536 * position["x"] + 256 * position["y"] + rotation
     return {"altitude_degrees": altitude, "azimuth_degrees": azimuth,
             "occupation": occupation, "height": height,
             "visible": position["visible"], "x": position["x"], "y": position["y"],
-            "rotation": rotation}
+            "rotation": rotation, "state": 0}
 
 
 def validate_constellations(config, live=False):
@@ -146,8 +157,9 @@ def validate_constellations(config, live=False):
         if not isinstance(name, str) or not name.strip() or name in names:
             raise ConfigurationError("Fixed-sky targets need unique non-empty names")
         names.add(name)
-        finite(item.get("ra_degrees"), 0, 360, name + " right ascension")
-        finite(item.get("dec_degrees"), -90, 90, name + " declination")
+        if "follow" not in item:
+            finite(item.get("ra_degrees"), 0, 360, name + " right ascension")
+            finite(item.get("dec_degrees"), -90, 90, name + " declination")
         kind = item.get("target_kind", "furni")
         if kind not in ("furni", "furni-bc"):
             raise ConfigurationError("Unsupported fixed-sky target kind")
@@ -162,8 +174,22 @@ def validate_constellations(config, live=False):
         if not isinstance(state_variable, str) or not re.fullmatch(
                 r"[A-Za-z][A-Za-z0-9_]{0,39}", state_variable):
             raise ConfigurationError("Invalid state_variable for " + name)
+        bridge = config.get("motion_bridge", BRIDGE)
+        if state_variable in (bridge["occupation_variable"], bridge["altitude_variable"]):
+            raise ConfigurationError("Fixed-sky state variable must differ from position variables")
         finite(item.get("intrinsic_altitude_offset", 0), -10000, 10000,
                name + " intrinsic altitude offset")
+    by_name = {item["name"]: item for item in constellations}
+    for item in constellations:
+        if "follow" not in item:
+            continue
+        source = item["follow"]
+        if (not isinstance(source, str) or source not in by_name
+                or "follow" in by_name[source]):
+            raise ConfigurationError("Fixed-sky follow must name an independent celestial anchor")
+        if any(key in item for key in ("ra_degrees", "dec_degrees", "intrinsic_altitude_offset")):
+            raise ConfigurationError("Linked furniture uses its source anchor and relative_altitude only")
+        integer(item.get("relative_altitude"), -10000, 10000, "relative_altitude")
     return constellations
 
 
@@ -246,7 +272,7 @@ def write_command(client, target, bridge, frame, current_values):
     return written
 
 
-def write_moon_command(client, target, bridge, state_variable, frame, current_values):
+def write_display_command(client, target, bridge, state_variable, frame, current_values):
     written = []
     # Set artwork and altitude first; occupation is the final movement command.
     for name, value in ((state_variable, frame["state"]),
@@ -272,10 +298,10 @@ def build_refresh_jobs(ephemeris, config, observer, timestamp, bridge, sun_targe
                         bridge["occupation_variable"]: []}
     frames = []
 
-    def add_frame(target_kind, furni_id, frame, state=None):
+    def add_frame(target_kind, furni_id, frame, state=None, display_variable=state_variable):
         target = f"{target_kind}/{furni_id}"
         if state is not None:
-            rows_by_variable[state_variable].append(
+            rows_by_variable.setdefault(display_variable, []).append(
                 {"target_kind": target_kind, "furni_id": furni_id, "value": str(state),
                  "target": target})
         rows_by_variable[bridge["altitude_variable"]].append(
@@ -305,10 +331,13 @@ def build_refresh_jobs(ephemeris, config, observer, timestamp, bridge, sun_targe
         item = profile["config"]
         frame = constellation_command_frame(
             ephemeris, config, item, observer, timestamp, profile["rotation"])
-        add_frame(item.get("target_kind", "furni"), item["furni_id"], frame)
+        add_frame(item.get("target_kind", "furni"), item["furni_id"], frame,
+                  state=0, display_variable=item.get("state_variable", "state"))
 
     jobs = []
-    for variable in (state_variable, bridge["altitude_variable"], bridge["occupation_variable"]):
+    position_variables = (bridge["altitude_variable"], bridge["occupation_variable"])
+    display_variables = [name for name in rows_by_variable if name not in position_variables]
+    for variable in (*display_variables, *position_variables):
         rows = rows_by_variable[variable]
         for start in range(0, len(rows), 10):
             jobs.append({"variable": variable, "rows": rows[start:start+10]})
@@ -342,8 +371,8 @@ def run(config, client, ephemeris, duration):
                        bridge["native_height_units_per_tile"])
     offsets = (config["bodies"][0].get("intrinsic_altitude_offset", 0),
                moon_config.get("intrinsic_altitude_offset", 0),
-               *(item["config"].get("intrinsic_altitude_offset", 0)
-                 for item in fixed_sky + planets))
+               *(fixed_sky_anchor(config, item["config"])[1] for item in fixed_sky),
+               *(item["config"].get("intrinsic_altitude_offset", 0) for item in planets))
     for offset in offsets:
         finite(offset, -10000, 10000, "intrinsic_altitude_offset")
         if not (0 <= bridge["screen_horizon_height"] - vertical_radius - offset and
@@ -462,7 +491,7 @@ def run(config, client, ephemeris, duration):
                                 moon_current[bridge["altitude_variable"]],
                                 moon_current[moon_config["state_variable"]])
                 if expected_moon != current_moon:
-                    written = write_moon_command(client, moon_target, bridge,
+                    written = write_display_command(client, moon_target, bridge,
                                                   moon_config["state_variable"], moon_frame,
                                                   moon_current)
                     log("moon_frame", utc=datetime.fromtimestamp(
@@ -486,9 +515,18 @@ def run(config, client, ephemeris, duration):
                         expected_star = (frame["occupation"], frame["height"])
                         actual_star = (current_star[bridge["occupation_variable"]],
                                        current_star[bridge["altitude_variable"]])
+                        state_variable = item.get("state_variable", "state")
+                        if "state" in frame:
+                            expected_star += (frame["state"],)
+                            actual_star += (current_star[state_variable],)
                         if expected_star != actual_star:
-                            written = write_command(client, profile["target"], bridge,
-                                                    frame, current_star)
+                            if "state" in frame:
+                                written = write_display_command(
+                                    client, profile["target"], bridge, state_variable,
+                                    frame, current_star)
+                            else:
+                                written = write_command(client, profile["target"], bridge,
+                                                        frame, current_star)
                             log(event, name=item["name"], furni_id=item["furni_id"],
                                 utc=datetime.fromtimestamp(sampled_at, timezone.utc).isoformat(),
                                 observer=observer,
@@ -496,6 +534,7 @@ def run(config, client, ephemeris, duration):
                                 azimuth_degrees=round(frame["azimuth_degrees"], 4),
                                 x=frame["x"], y=frame["y"], occupation=frame["occupation"],
                                 height=frame["height"], rotation=frame["rotation"],
+                                state=frame.get("state", current_star[state_variable]),
                                 variables_written=written)
                             failures = 0
                 next_update = time.monotonic() + config["update_seconds"]
@@ -563,6 +602,9 @@ def main():
                      moon_config["state_variable"]))
                 fixed_sky = read_constellation_profiles(reader, definitions, config, bridge)
                 planets = read_planet_profiles(reader, definitions, config, bridge)
+                for profile in fixed_sky:
+                    log("fixed_sky_preflight", name=profile["config"]["name"],
+                        furni_id=profile["config"]["furni_id"], variables=profile["values"])
                 for profile in planets:
                     log("planet_preflight", name=profile["config"]["name"],
                         furni_id=profile["config"]["furni_id"],
@@ -591,9 +633,10 @@ def main():
             for item in constellations:
                 frame = constellation_command_frame(
                     ephemeris, config, item, observer, preview_time, rotation=0)
+                anchor, _ = fixed_sky_anchor(config, item)
                 log("scheduled_fixed_sky_preview", observer=observer,
                     name=item["name"], furni_id=item["furni_id"],
-                    ra_degrees=item["ra_degrees"], dec_degrees=item["dec_degrees"], **frame)
+                    ra_degrees=anchor["ra_degrees"], dec_degrees=anchor["dec_degrees"], **frame)
             return 0
         client = HabboClient(config, os.environ.get("HABBO_READ_KEY"), os.environ.get("HABBO_WRITE_KEY"))
         if not client.write_key:
