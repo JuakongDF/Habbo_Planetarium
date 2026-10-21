@@ -1,4 +1,4 @@
-name: Scheduled Sun, Moon, and Constellation controller
+name: Scheduled Sun, Moon, Planets, and Constellation controller
 
 on:
   schedule:

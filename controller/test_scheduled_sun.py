@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import scheduled_sun as sun
 
@@ -110,7 +111,7 @@ class DirectVariableWriteTests(unittest.TestCase):
                 return self.altitude, 180
 
         config = {
-            "bodies": [{"intrinsic_altitude_offset": 700}],
+            "bodies": [{"name": "sun", "intrinsic_altitude_offset": 700}],
             "projection": {"room_size": 56, "diagonal_cells": 54,
                            "diagonal_start_x": 1, "diagonal_start_y": 53},
             "motion_bridge": {"occupation_variable": "occupation",
@@ -228,19 +229,114 @@ class DirectVariableWriteTests(unittest.TestCase):
         fixed_sky = [{"config": item, "target": f"furni/{item['furni_id']}",
                       "rotation": 0, "values": {}}
                      for item in config["constellations"]]
+        planets = [{"config": item, "target": f"furni/{item['furni_id']}",
+                    "rotation": 3, "values": {}}
+                   for item in sun.validate_planets(config)]
         jobs, frames = sun.build_refresh_jobs(
             FakeEphemeris(), config, config["default_observer"], 1_800_000_000,
-            bridge, "furni-bc/0", 0, "furni/523624626", fixed_sky)
+            bridge, "furni-bc/0", 0, "furni/523624626", fixed_sky, planets)
 
         self.assertEqual([job["variable"] for job in jobs],
                          ["state", "altitude", "altitude", "occupation", "occupation"])
-        self.assertEqual([len(job["rows"]) for job in jobs], [1, 10, 5, 10, 5])
-        self.assertEqual(len(frames), 15)
-        self.assertEqual(sum(len(job["rows"]) for job in jobs), 31)
+        self.assertEqual([len(job["rows"]) for job in jobs], [1, 10, 6, 10, 6])
+        self.assertEqual(len(frames), 16)
+        self.assertEqual(sum(len(job["rows"]) for job in jobs), 33)
         self.assertEqual([row["target"] for row in jobs[0]["rows"]], ["furni/523624626"])
-        self.assertNotIn("state", [row["target"] for row in jobs[0]["rows"]
-                                    if row["target"] != "furni/523624626"])
+        saturn_rows = [(job["variable"], row) for job in jobs for row in job["rows"]
+                       if row["target"] == "furni/165326448"]
+        self.assertEqual([variable for variable, _ in saturn_rows], ["altitude", "occupation"])
+        self.assertEqual(int(saturn_rows[1][1]["value"]) % 256, 3)
         self.assertTrue(all(len(job["rows"]) <= 10 for job in jobs))
+
+    def test_saturn_uses_ephemeris_and_preserves_rotation_with_zero_offset(self):
+        import json
+        from pathlib import Path
+        config = sun.validate_config(json.loads(
+            Path(__file__).with_name("config.habbo-es.json").read_text()), live=True)
+        saturn, = sun.validate_planets(config)
+        self.assertEqual((saturn["name"], saturn["furni_id"]),
+                         ("saturn barycenter", 165326448))
+
+        class Ephemeris:
+            def apparent_altaz(self, observer, body, timestamp):
+                self.called = (observer, body, timestamp)
+                return self.altitude, 90
+
+        ephemeris = Ephemeris()
+        for altitude, height in ((-90, 1000), (0, 3500), (90, 6000)):
+            ephemeris.altitude = altitude
+            frame = sun.body_command_frame(ephemeris, config, saturn, 1, 123, 3)
+            self.assertEqual(ephemeris.called, (1, "saturn barycenter", 123))
+            self.assertEqual((frame["height"], frame["visible"]), (height, 1))
+            self.assertEqual(frame["occupation"] % 256, 3)
+            self.assertEqual(frame["x"] + frame["y"], 54)
+
+    def test_live_loop_updates_saturn_normally_and_on_refresh(self):
+        import json
+        from pathlib import Path
+        for request in (0, 1):
+            with self.subTest(update_request=request):
+                config = sun.validate_config(json.loads(
+                    Path(__file__).with_name("config.habbo-es.json").read_text()), live=True)
+                config["constellations"] = []
+                sun.validate_planets(config)
+                now = [0.0]
+
+                class Ephemeris:
+                    def apparent_altaz(self, observer, body, timestamp):
+                        return -20 + timestamp / 60, 90
+
+                    def moon_phase(self, observer, timestamp):
+                        return {"illumination": 0.6, "waxing": True, "elongation_degrees": 120}
+
+                class Client:
+                    def __init__(self):
+                        self.flag, self.clears = request, 0
+                        self.writes, self.batches = [], []
+                        self.values = {target: {"occupation": 65536 + 256*53 + 3,
+                                               "altitude": 3500, "state": 2}
+                                       for target in ("furni-bc/0", "furni/523624626",
+                                                      "furni/165326448")}
+
+                    def controls_with_update_request(self):
+                        return True, 1, self.flag
+
+                    def clear_update_request(self):
+                        self.flag = 0
+                        self.clears += 1
+
+                    def request(self, method, path, payload=None, **kwargs):
+                        if path == "":
+                            return {"furni": ["occupation", "altitude", "state"]}
+                        if method == "GET":
+                            return {"variables": {key: {"value": str(value)} for key, value
+                                                  in self.values[path.removeprefix("/furni/")].items()}}
+                        _, _, variable, kind, furni_id = path.split("/")
+                        target = f"{kind}/{furni_id}"
+                        self.writes.append((target, variable, int(payload["value"])))
+                        self.values[target][variable] = int(payload["value"])
+                        return payload
+
+                    def publish_variable(self, variable, rows):
+                        self.batches.append((variable, rows))
+                        for row in rows:
+                            self.values[row["target"]][variable] = int(row["value"])
+                        return len(rows)
+
+                client = Client()
+                with patch.object(sun.time, "monotonic", lambda: now[0]), \
+                     patch.object(sun.time, "time", lambda: now[0]), \
+                     patch.object(sun.time, "sleep", lambda delay: now.__setitem__(0, now[0]+delay)), \
+                     patch.object(sun, "log") as logger:
+                    sun.run(config, client, Ephemeris(), 31)
+                self.assertTrue(any(target == "furni/165326448" for target, _, _ in client.writes))
+                self.assertTrue(any(call.args[0] == "planet_frame" for call in logger.call_args_list))
+                self.assertEqual(client.values["furni/165326448"]["state"], 2)
+                self.assertEqual(client.values["furni/165326448"]["occupation"] % 256, 3)
+                self.assertEqual(client.clears, request)
+                saturn_batches = [variable for variable, rows in client.batches
+                                  if any(row["target"] == "furni/165326448" for row in rows)]
+                self.assertEqual(saturn_batches, ["altitude", "occupation"] if request else [])
 
 
 if __name__ == "__main__":

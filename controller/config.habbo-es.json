@@ -66,6 +66,13 @@
       "target_kind": "furni-bc",
       "furni_id": 0,
       "intrinsic_altitude_offset": 700
+    },
+    {
+      "name": "saturn barycenter",
+      "target_kind": "furni",
+      "furni_id": 165326448,
+      "state_variable": "state",
+      "intrinsic_altitude_offset": 0
     }
   ]
 }

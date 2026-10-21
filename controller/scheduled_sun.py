@@ -1,4 +1,4 @@
-"""Scheduled Sun controller using permanent WIRED furniture variables."""
+"""Scheduled celestial controller using permanent WIRED furniture variables."""
 import argparse
 from datetime import datetime, timezone
 import json
@@ -24,19 +24,49 @@ BRIDGE = {
 
 
 def command_frame(ephemeris, config, observer, timestamp, rotation):
-    altitude, azimuth = ephemeris.apparent_altaz(observer, "sun", timestamp)
+    return body_command_frame(ephemeris, config, config["bodies"][0], observer,
+                              timestamp, rotation)
+
+
+def body_command_frame(ephemeris, config, body, observer, timestamp, rotation):
+    """Use the body's changing ephemeris position, including below the horizon."""
+    altitude, azimuth = ephemeris.apparent_altaz(observer, body["name"], timestamp)
     bridge = config.get("motion_bridge", BRIDGE)
     projection = {**config["projection"],
                   "horizon_height": bridge["screen_horizon_height"]}
     position = project_screen_ellipse(
         altitude, azimuth, projection,
         bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"])
-    height = position["height"] - config["bodies"][0].get("intrinsic_altitude_offset", 0)
-    integer(height, 0, 10000, "Sun command altitude")
+    height = position["height"] - body.get("intrinsic_altitude_offset", 0)
+    integer(height, 0, 10000, body["name"] + " command altitude")
     occupation = 65536 * position["x"] + 256 * position["y"] + rotation
     return {"altitude_degrees": altitude, "azimuth_degrees": azimuth,
             "occupation": occupation, "height": height,
-            "visible": position["visible"], "x": position["x"], "y": position["y"]}
+            "visible": position["visible"], "x": position["x"], "y": position["y"],
+            "rotation": rotation}
+
+
+def validate_planets(config):
+    if config["bodies"][0]["name"] != "sun":
+        raise ConfigurationError("The scheduled controller's first body must be the Sun")
+    planets = config["bodies"][1:]
+    for item in planets:
+        if item["name"] not in ("mercury", "venus", "mars barycenter",
+                                 "jupiter barycenter", "saturn barycenter"):
+            raise ConfigurationError("Additional scheduled bodies must be planets")
+        if (item["target_kind"], item["furni_id"]) == (
+                config["moon"]["target_kind"], config["moon"]["furni_id"]):
+            raise ConfigurationError("A planet cannot use the Moon's furniture")
+        state_variable = item.setdefault("state_variable", "state")
+        if not isinstance(state_variable, str) or not re.fullmatch(
+                r"[A-Za-z][A-Za-z0-9_]{0,39}", state_variable):
+            raise ConfigurationError("Invalid planet state_variable")
+        bridge = config.get("motion_bridge", BRIDGE)
+        if state_variable in (bridge["occupation_variable"], bridge["altitude_variable"]):
+            raise ConfigurationError("Planet state variable must differ from occupation and altitude")
+        finite(item.get("intrinsic_altitude_offset", 0), -10000, 10000,
+               item["name"] + " intrinsic altitude offset")
+    return planets
 
 
 def moon_display_state(illumination, waxing, latitude, full_threshold=0.5):
@@ -171,8 +201,16 @@ def read_furni_profile(client, definitions, target_kind, entity_id, required):
 
 
 def read_constellation_profiles(client, definitions, config, bridge):
+    return read_motion_profiles(client, definitions, config.get("constellations", []), bridge)
+
+
+def read_planet_profiles(client, definitions, config, bridge):
+    return read_motion_profiles(client, definitions, config["bodies"][1:], bridge)
+
+
+def read_motion_profiles(client, definitions, items, bridge):
     profiles = []
-    for item in config.get("constellations", []):
+    for item in items:
         state_variable = item.get("state_variable", "state")
         required = (bridge["occupation_variable"], bridge["altitude_variable"], state_variable)
         target, values = read_furni_profile(
@@ -227,7 +265,7 @@ def write_moon_command(client, target, bridge, state_variable, frame, current_va
 
 
 def build_refresh_jobs(ephemeris, config, observer, timestamp, bridge, sun_target,
-                       sun_rotation, moon_target, fixed_sky):
+                       sun_rotation, moon_target, fixed_sky, planets=()):
     """Build API batches grouped by variable; each batch is limited to 10 furni."""
     state_variable = config["moon"]["state_variable"]
     rows_by_variable = {state_variable: [], bridge["altitude_variable"]: [],
@@ -256,6 +294,12 @@ def build_refresh_jobs(ephemeris, config, observer, timestamp, bridge, sun_targe
     moon_frame = moon_command_frame(ephemeris, config, observer, timestamp)
     add_frame(moon_config["target_kind"], moon_config["furni_id"], moon_frame,
               state=moon_frame["state"])
+
+    for profile in planets:
+        item = profile["config"]
+        frame = body_command_frame(
+            ephemeris, config, item, observer, timestamp, profile["rotation"])
+        add_frame(item.get("target_kind", "furni"), item["furni_id"], frame)
 
     for profile in fixed_sky:
         item = profile["config"]
@@ -288,6 +332,7 @@ def run(config, client, ephemeris, duration):
         raise ConfigurationError("Moon's current occupation is outside the 56-cell room")
     moon_state = integer(moon_values[moon_config["state_variable"]], 0, 3, "moon state")
     fixed_sky = read_constellation_profiles(client, definitions, config, bridge)
+    planets = read_planet_profiles(client, definitions, config, bridge)
     for key, low, high in (("screen_aspect_ratio", 0.5, 4),
                            ("screen_horizon_height", 0, 10000),
                            ("native_height_units_per_tile", 0.1, 200)):
@@ -297,7 +342,8 @@ def run(config, client, ephemeris, duration):
                        bridge["native_height_units_per_tile"])
     offsets = (config["bodies"][0].get("intrinsic_altitude_offset", 0),
                moon_config.get("intrinsic_altitude_offset", 0),
-               *(item["config"].get("intrinsic_altitude_offset", 0) for item in fixed_sky))
+               *(item["config"].get("intrinsic_altitude_offset", 0)
+                 for item in fixed_sky + planets))
     for offset in offsets:
         finite(offset, -10000, 10000, "intrinsic_altitude_offset")
         if not (0 <= bridge["screen_horizon_height"] - vertical_radius - offset and
@@ -337,7 +383,7 @@ def run(config, client, ephemeris, duration):
                     if pending_batch_jobs is None:
                         pending_batch_jobs, _ = build_refresh_jobs(
                             ephemeris, config, observer, time.time(), bridge, target,
-                            rotation, moon_target, fixed_sky)
+                            rotation, moon_target, fixed_sky, planets)
                         pending_batch_index = 0
                         pending_request_value = update_request
                         log("update_request_received", value=update_request,
@@ -359,7 +405,7 @@ def run(config, client, ephemeris, duration):
             if enabled and refresh_after_enable and pending_batch_jobs is None:
                 pending_batch_jobs, _ = build_refresh_jobs(
                     ephemeris, config, observer, time.time(), bridge, target,
-                    rotation, moon_target, fixed_sky)
+                    rotation, moon_target, fixed_sky, planets)
                 pending_batch_index = 0
                 pending_request_value = "room_reenabled"
                 refresh_after_enable = False
@@ -372,7 +418,7 @@ def run(config, client, ephemeris, duration):
                     for row in job["rows"]:
                         current = current_values if row["target"] == target else (
                             moon_current if row["target"] == moon_target else
-                            next(profile["values"] for profile in fixed_sky
+                            next(profile["values"] for profile in fixed_sky + planets
                                  if profile["target"] == row["target"]))
                         current[job["variable"]] = int(row["value"])
                     log("celestial_batch", variable=job["variable"], furni_count=count,
@@ -382,7 +428,7 @@ def run(config, client, ephemeris, duration):
                 elif refresh_again:
                     pending_batch_jobs, _ = build_refresh_jobs(
                         ephemeris, config, observer, time.time(), bridge, target,
-                        rotation, moon_target, fixed_sky)
+                        rotation, moon_target, fixed_sky, planets)
                     pending_batch_index = 0
                     pending_request_value = "coalesced"
                     refresh_again = False
@@ -429,26 +475,29 @@ def run(config, client, ephemeris, duration):
                         waxing=moon_frame["waxing"], state=moon_frame["state"],
                         rotation=moon_frame["rotation"], variables_written=written)
                     failures = 0
-                for profile in fixed_sky:
-                    item = profile["config"]
-                    frame = constellation_command_frame(
-                        ephemeris, config, item, observer, sampled_at, profile["rotation"])
-                    current_star = profile["values"]
-                    expected_star = (frame["occupation"], frame["height"])
-                    actual_star = (current_star[bridge["occupation_variable"]],
-                                   current_star[bridge["altitude_variable"]])
-                    if expected_star != actual_star:
-                        written = write_command(client, profile["target"], bridge,
-                                                frame, current_star)
-                        log("fixed_sky_frame", name=item["name"], furni_id=item["furni_id"],
-                            utc=datetime.fromtimestamp(sampled_at, timezone.utc).isoformat(),
-                            observer=observer,
-                            altitude_degrees=round(frame["altitude_degrees"], 4),
-                            azimuth_degrees=round(frame["azimuth_degrees"], 4),
-                            x=frame["x"], y=frame["y"], occupation=frame["occupation"],
-                            height=frame["height"], rotation=frame["rotation"],
-                            variables_written=written)
-                        failures = 0
+                for profiles, frame_function, event in (
+                        (planets, body_command_frame, "planet_frame"),
+                        (fixed_sky, constellation_command_frame, "fixed_sky_frame")):
+                    for profile in profiles:
+                        item = profile["config"]
+                        frame = frame_function(
+                            ephemeris, config, item, observer, sampled_at, profile["rotation"])
+                        current_star = profile["values"]
+                        expected_star = (frame["occupation"], frame["height"])
+                        actual_star = (current_star[bridge["occupation_variable"]],
+                                       current_star[bridge["altitude_variable"]])
+                        if expected_star != actual_star:
+                            written = write_command(client, profile["target"], bridge,
+                                                    frame, current_star)
+                            log(event, name=item["name"], furni_id=item["furni_id"],
+                                utc=datetime.fromtimestamp(sampled_at, timezone.utc).isoformat(),
+                                observer=observer,
+                                altitude_degrees=round(frame["altitude_degrees"], 4),
+                                azimuth_degrees=round(frame["azimuth_degrees"], 4),
+                                x=frame["x"], y=frame["y"], occupation=frame["occupation"],
+                                height=frame["height"], rotation=frame["rotation"],
+                                variables_written=written)
+                            failures = 0
                 next_update = time.monotonic() + config["update_seconds"]
             wake = min(next_poll, next_update) if enabled else next_poll
             if enabled and pending_batch_jobs is not None:
@@ -493,11 +542,13 @@ def main():
         if moon_config["state_variable"] in (bridge["occupation_variable"], bridge["altitude_variable"]):
             raise ConfigurationError("Moon state variable must differ from occupation and altitude")
         constellations = validate_constellations(config, live=not args.preview)
+        planet_configs = validate_planets(config)
         finite(args.duration, 1, 5*60*60+55*60, "duration")
         ephemeris = Ephemeris(args.ephemeris, config)
         if args.preview:
             bridge = config.get("motion_bridge", BRIDGE)
             observer = config["default_observer"]
+            planets = []
             if os.environ.get("HABBO_READ_KEY"):
                 reader = HabboClient(config, os.environ.get("HABBO_READ_KEY"), None)
                 _, observer, update_request = reader.controls_with_update_request()
@@ -511,9 +562,15 @@ def main():
                     (bridge["occupation_variable"], bridge["altitude_variable"],
                      moon_config["state_variable"]))
                 fixed_sky = read_constellation_profiles(reader, definitions, config, bridge)
+                planets = read_planet_profiles(reader, definitions, config, bridge)
+                for profile in planets:
+                    log("planet_preflight", name=profile["config"]["name"],
+                        furni_id=profile["config"]["furni_id"],
+                        variables=profile["values"], rotation=profile["rotation"])
                 log("furni_preflight", sun_variables=sorted(sun_values),
                     moon_variables=sorted(moon_values), moon_state=moon_values[moon_config["state_variable"]],
                     update_request=update_request,
+                    planet_targets=len(planets),
                     fixed_sky_targets=len(fixed_sky),
                     fixed_sky_variables=sorted((bridge["occupation_variable"],
                                                  bridge["altitude_variable"], "state")))
@@ -524,6 +581,13 @@ def main():
                 native_height_units_per_tile=bridge["native_height_units_per_tile"], **frame)
             moon_frame = moon_command_frame(ephemeris, config, observer, preview_time)
             log("scheduled_moon_preview", observer=observer, **moon_frame)
+            for item in planet_configs:
+                rotation = next((profile["rotation"] for profile in planets
+                                 if profile["config"] is item), 0)
+                frame = body_command_frame(ephemeris, config, item, observer,
+                                           preview_time, rotation=rotation)
+                log("scheduled_planet_preview", observer=observer,
+                    name=item["name"], furni_id=item["furni_id"], **frame)
             for item in constellations:
                 frame = constellation_command_frame(
                     ephemeris, config, item, observer, preview_time, rotation=0)

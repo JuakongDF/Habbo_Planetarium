@@ -4,6 +4,18 @@ The room exposes two ordinary permanent furniture variables on the Sun, `occupat
 
 The Sun's in-game BC ID is `2147418112`; the API target is `furni-bc/0`.
 
+Saturn uses `furni/165326448`, with permanent `occupation`, `altitude`, and
+`state` variables. Its position comes from the DE440s `saturn barycenter`
+ephemeris target, observed from the selected site (Santiago by default), so it
+includes both Earth's daily rotation and Saturn's orbital motion. The
+[Skyfield ephemeris guide](https://rhodesmill.org/skyfield/planets.html) explains
+the planetary-system barycenters supplied by these kernels. The controller
+preserves Saturn's stored rotation and artwork state, assumes zero intrinsic
+height offset, and moves it above and below the horizon using the same projection
+as the Sun and Moon. It participates in ordinary changed-value writes and in
+`update_request` refresh batches. Additional planets can be configured after
+the Sun in `bodies`; they require these same three permanent variables.
+
 ## Confirmed movement test
 
 The historical [one-tile API test](https://github.com/JuakongDF/Habbo_Planetarium/actions/runs/39349603144) read `(36,18,0)`, wrote the next flat-diagonal occupation `(37,17,0)`, kept altitude at `0`, and signaled the Sun ID. The user saw the Sun move one tile east along the diagonal. The updated workflow tests whether writing `occupation` alone now triggers the same movement.
