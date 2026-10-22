@@ -8,6 +8,11 @@
   "poll_seconds": 5,
   "update_seconds": 15,
   "default_observer": 1,
+  "camera": {
+    "enabled": false,
+    "view_variable": "astra_view",
+    "visibility_variable": "visible"
+  },
   "observers": {
     "1": {
       "name": "Santiago (example)",

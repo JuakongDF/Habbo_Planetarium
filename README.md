@@ -32,3 +32,5 @@ Store `HABBO_READ_KEY` and `HABBO_WRITE_KEY` only under **Settings → Secrets a
 - **Connection test:** read-only API access and variable binding diagnostics.
 
 For the current bridge and calibration notes, see [controller/NATIVE_CONTROL.md](controller/NATIVE_CONTROL.md). The older packed-state prototype remains in [controller/README.md](controller/README.md) for reference.
+
+Directional views (eight compass headings plus zenith) are implemented as an opt-in controller. See [camera setup and mode codes](controller/CAMERA.md) for the `astra_view` and `visible` WIRED bindings, batch timing, and activation. The existing scheduled view remains selected until room setup is complete.

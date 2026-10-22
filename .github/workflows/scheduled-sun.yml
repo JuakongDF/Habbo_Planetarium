@@ -18,6 +18,15 @@ on:
         type: number
         required: true
         default: 10
+      camera:
+        description: Directional camera (requires astra_view and visible WIRED bindings)
+        type: boolean
+        default: false
+      preview_view:
+        description: Read-only projection override (room uses the selected room view)
+        type: choice
+        default: room
+        options: ['room', '-1', '0', '1', '2', '3', '4', '5', '6', '7', '8']
 
 permissions:
   contents: read
@@ -40,8 +49,24 @@ jobs:
           python-version: '3.12'
       - name: Install ephemeris library
         run: python -m pip install -r controller/requirements.txt
+      - name: Cache JPL DE440s
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/de440s.bsp
+          key: jpl-de440s-v1
       - name: Download JPL DE440s
-        run: curl --fail --location --retry 3 --max-time 180 https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440s.bsp --output "$RUNNER_TEMP/de440s.bsp"
+        run: |
+          if [[ ! -s "$RUNNER_TEMP/de440s.bsp" ]]; then
+            for url in \
+              https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp \
+              https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440s.bsp; do
+              if curl --fail --location --silent --show-error --retry 1 --connect-timeout 15 --max-time 120 "$url" --output "$RUNNER_TEMP/de440s.bsp.part"; then
+                mv "$RUNNER_TEMP/de440s.bsp.part" "$RUNNER_TEMP/de440s.bsp"
+                break
+              fi
+            done
+          fi
+          python -c 'import os; from jplephem.spk import SPK; SPK.open(os.environ["RUNNER_TEMP"] + "/de440s.bsp").close()'
       - name: Run scheduled controller
         if: github.event_name == 'schedule'
         env:
@@ -52,17 +77,26 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'preview'
         env:
           HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
-        run: python controller/scheduled_sun.py --ephemeris "$RUNNER_TEMP/de440s.bsp" --preview
+          CAMERA_MODE: ${{ inputs.camera }}
+          PREVIEW_VIEW: ${{ inputs.preview_view }}
+        run: |
+          args=(--preview)
+          if [[ "$CAMERA_MODE" == "true" ]]; then args+=(--camera); fi
+          if [[ "$PREVIEW_VIEW" != "room" ]]; then args+=(--view "$PREVIEW_VIEW"); fi
+          python controller/scheduled_sun.py --ephemeris "$RUNNER_TEMP/de440s.bsp" "${args[@]}"
       - name: Run bounded manual controller
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'live'
         env:
           HABBO_READ_KEY: ${{ secrets.HABBO_READ_KEY }}
           HABBO_WRITE_KEY: ${{ secrets.HABBO_WRITE_KEY }}
           DURATION_MINUTES: ${{ inputs.duration_minutes }}
+          CAMERA_MODE: ${{ inputs.camera }}
         run: |
           if ! [[ "$DURATION_MINUTES" =~ ^[0-9]+$ ]]; then
             echo "duration_minutes must be an integer" >&2
             exit 1
           fi
           duration_seconds=$((DURATION_MINUTES * 60))
-          python controller/scheduled_sun.py --ephemeris "$RUNNER_TEMP/de440s.bsp" --duration "$duration_seconds"
+          args=()
+          if [[ "$CAMERA_MODE" == "true" ]]; then args+=(--camera); fi
+          python controller/scheduled_sun.py --ephemeris "$RUNNER_TEMP/de440s.bsp" --duration "$duration_seconds" "${args[@]}"

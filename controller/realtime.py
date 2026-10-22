@@ -166,23 +166,39 @@ def lunar_phase(separation_degrees, sun_ecliptic_longitude, moon_ecliptic_longit
     }
 
 
-def project_screen_ellipse(altitude, azimuth, p, screen_aspect_ratio, native_height_units_per_tile):
-    """Project the full celestial direction, including below-horizon arcs, onto an ellipse."""
+def project_screen_ellipse(altitude, azimuth, p, screen_aspect_ratio, native_height_units_per_tile,
+                           view=-1):
+    """Orthographic sky map: -1 overlays both halves, 0..7 face N..NW, 8 looks up.
+
+    Horizontal views retain below-horizon objects in the forward hemisphere.
+    The zenith map uses north up/east right and excludes the lower hemisphere.
+    Boundary directions are included, with tolerance for trigonometric roundoff.
+    """
     finite(altitude, -90, 90, "altitude")
     finite(azimuth, 0, 360, "azimuth")
     aspect = finite(screen_aspect_ratio, 0.5, 4, "screen_aspect_ratio")
     units = finite(native_height_units_per_tile, 0.1, 200, "native_height_units_per_tile")
-    east = math.cos(math.radians(altitude)) * math.sin(math.radians(azimuth))
+    view = integer(view, -1, 8, "camera view")
+    alt, az = math.radians(altitude), math.radians(azimuth)
+    if view == 8:
+        horizontal = math.cos(alt) * math.sin(az)
+        vertical = math.cos(alt) * math.cos(az)
+        depth = math.sin(alt)
+    else:
+        relative_az = az - math.radians(max(view, 0) * 45)
+        horizontal = math.cos(alt) * math.sin(relative_az)
+        vertical = math.sin(alt)
+        depth = math.cos(alt) * math.cos(relative_az)
     # The room's diagonal index increases eastward.
     cells, start_x, start_y = diagonal_geometry(p)
-    index = math.floor((cells-1) * (1+east) / 2 + 0.5)
+    index = math.floor((cells-1) * (1+horizontal) / 2 + 0.5)
     horizontal_radius_tiles = (p["room_size"]-1) / 2
     vertical_radius_tiles = horizontal_radius_tiles / aspect
     height = math.floor(p["horizon_height"] + vertical_radius_tiles * units *
-                        math.sin(math.radians(altitude)) + 0.5)
+                        vertical + 0.5)
     integer(height, 0, 10000, "projected height")
     return dict(index=index, x=start_x+index, y=start_y-index,
-                height=height, visible=1)
+                height=height, visible=1 if view == -1 else int(depth >= -1e-12))
 
 
 class Ephemeris:

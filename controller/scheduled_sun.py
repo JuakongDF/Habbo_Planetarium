@@ -23,12 +23,12 @@ BRIDGE = {
 }
 
 
-def command_frame(ephemeris, config, observer, timestamp, rotation):
+def command_frame(ephemeris, config, observer, timestamp, rotation, view=-1):
     return body_command_frame(ephemeris, config, config["bodies"][0], observer,
-                              timestamp, rotation)
+                              timestamp, rotation, view=view)
 
 
-def body_command_frame(ephemeris, config, body, observer, timestamp, rotation):
+def body_command_frame(ephemeris, config, body, observer, timestamp, rotation, view=-1):
     """Use the body's changing ephemeris position, including below the horizon."""
     altitude, azimuth = ephemeris.apparent_altaz(observer, body["name"], timestamp)
     bridge = config.get("motion_bridge", BRIDGE)
@@ -36,7 +36,7 @@ def body_command_frame(ephemeris, config, body, observer, timestamp, rotation):
                   "horizon_height": bridge["screen_horizon_height"]}
     position = project_screen_ellipse(
         altitude, azimuth, projection,
-        bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"])
+        bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"], view=view)
     height = position["height"] - body.get("intrinsic_altitude_offset", 0)
     integer(height, 0, 10000, body["name"] + " command altitude")
     occupation = 65536 * position["x"] + 256 * position["y"] + rotation
@@ -86,7 +86,7 @@ def moon_display_state(illumination, waxing, latitude, full_threshold=0.5):
     return {"state": 0 if illumination >= full_threshold else 1, "rotation": rotation}
 
 
-def moon_command_frame(ephemeris, config, observer, timestamp):
+def moon_command_frame(ephemeris, config, observer, timestamp, view=-1):
     moon_config = config["moon"]
     latitude = config["observers"][str(observer)]["latitude"]
     altitude, azimuth = ephemeris.apparent_altaz(observer, "moon", timestamp)
@@ -99,7 +99,7 @@ def moon_command_frame(ephemeris, config, observer, timestamp):
                   "horizon_height": bridge["screen_horizon_height"]}
     position = project_screen_ellipse(
         altitude, azimuth, projection,
-        bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"])
+        bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"], view=view)
     height = position["height"] - moon_config.get("intrinsic_altitude_offset", 0)
     integer(height, 0, 10000, "Moon command altitude")
     occupation = 65536 * position["x"] + 256 * position["y"] + display["rotation"]
@@ -122,7 +122,7 @@ def fixed_sky_anchor(config, item):
 
 
 def constellation_command_frame(ephemeris, config, constellation, observer, timestamp,
-                                rotation):
+                                rotation, view=-1):
     """Project a fixed celestial anchor; only its local horizon position changes."""
     anchor, offset = fixed_sky_anchor(config, constellation)
     altitude, azimuth = ephemeris.fixed_star_altaz(
@@ -132,7 +132,7 @@ def constellation_command_frame(ephemeris, config, constellation, observer, time
                   "horizon_height": bridge["screen_horizon_height"]}
     position = project_screen_ellipse(
         altitude, azimuth, projection,
-        bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"])
+        bridge["screen_aspect_ratio"], bridge["native_height_units_per_tile"], view=view)
     height = position["height"] - offset
     integer(height, 0, 10000, constellation["name"] + " command altitude")
     occupation = 65536 * position["x"] + 256 * position["y"] + rotation
@@ -563,6 +563,10 @@ def main():
     parser.add_argument("--ephemeris", type=Path, required=True)
     parser.add_argument("--preview", action="store_true", help="calculate one position without API access")
     parser.add_argument("--duration", type=float, default=600)
+    parser.add_argument("--camera", action="store_true",
+                        help="enable directional views; requires astra_view and visible bindings")
+    parser.add_argument("--view", type=int, choices=range(-1, 9),
+                        help="preview a particular view without changing room controls")
     args = parser.parse_args()
     try:
         config = validate_config(json.loads(args.config.read_text()), live=not args.preview)
@@ -584,6 +588,20 @@ def main():
         planet_configs = validate_planets(config)
         finite(args.duration, 1, 5*60*60+55*60, "duration")
         ephemeris = Ephemeris(args.ephemeris, config)
+        if args.view is not None and not args.preview:
+            raise ConfigurationError("--view is read-only; use room astra_view for live changes")
+        if args.camera or config.get("camera", {}).get("enabled", False):
+            from camera_controller import preview_camera, run_camera, validate_camera
+            validate_camera(config)
+            client = HabboClient(config, os.environ.get("HABBO_READ_KEY"),
+                                 None if args.preview else os.environ.get("HABBO_WRITE_KEY"))
+            if args.preview:
+                preview_camera(config, client, ephemeris, args.view)
+            else:
+                if not client.write_key:
+                    raise ConfigurationError("Set HABBO_WRITE_KEY in GitHub Actions secrets")
+                run_camera(config, client, ephemeris, args.duration)
+            return 0
         if args.preview:
             bridge = config.get("motion_bridge", BRIDGE)
             observer = config["default_observer"]
@@ -617,22 +635,23 @@ def main():
                     fixed_sky_variables=sorted((bridge["occupation_variable"],
                                                  bridge["altitude_variable"], "state")))
             preview_time = time.time()
-            frame = command_frame(ephemeris, config, observer, preview_time, 0)
+            preview_view = -1 if args.view is None else args.view
+            frame = command_frame(ephemeris, config, observer, preview_time, 0, view=preview_view)
             log("scheduled_sun_preview", observer=observer,
                 screen_aspect_ratio=bridge["screen_aspect_ratio"],
                 native_height_units_per_tile=bridge["native_height_units_per_tile"], **frame)
-            moon_frame = moon_command_frame(ephemeris, config, observer, preview_time)
+            moon_frame = moon_command_frame(ephemeris, config, observer, preview_time, view=preview_view)
             log("scheduled_moon_preview", observer=observer, **moon_frame)
             for item in planet_configs:
                 rotation = next((profile["rotation"] for profile in planets
                                  if profile["config"] is item), 0)
                 frame = body_command_frame(ephemeris, config, item, observer,
-                                           preview_time, rotation=rotation)
+                                           preview_time, rotation=rotation, view=preview_view)
                 log("scheduled_planet_preview", observer=observer,
                     name=item["name"], furni_id=item["furni_id"], **frame)
             for item in constellations:
                 frame = constellation_command_frame(
-                    ephemeris, config, item, observer, preview_time, rotation=0)
+                    ephemeris, config, item, observer, preview_time, rotation=0, view=preview_view)
                 anchor, _ = fixed_sky_anchor(config, item)
                 log("scheduled_fixed_sky_preview", observer=observer,
                     name=item["name"], furni_id=item["furni_id"],
